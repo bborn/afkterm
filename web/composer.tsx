@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, errorMessage, type InputSkill, type Upload } from "./api";
-import { PlusIcon, SendIcon } from "./icons";
+import { CloseIcon, EditIcon, MicIcon, PlusIcon, SendIcon } from "./icons";
+import { useVoice, useVoiceAvailable } from "./voice";
 
 type Attachment = { id:string; name:string; upload?:Upload; error?:string };
 const finePointer=()=>window.matchMedia("(pointer: fine)").matches;
@@ -20,6 +21,8 @@ export function Composer({sessionId,mode,disabled,sendClaude,sendText}:{
   const [skills,setSkills]=useState<InputSkill[]|null>(null);
   const input=useRef<HTMLTextAreaElement>(null);
   const picker=useRef<HTMLInputElement>(null);
+  const voiceAvailable=useVoiceAvailable();
+  const voice=useVoice(setError);
 
   useEffect(()=>{try{text?localStorage.setItem(draftKey,text):localStorage.removeItem(draftKey);}catch{}},[text,draftKey]);
   useLayoutEffect(()=>{
@@ -53,9 +56,9 @@ export function Composer({sessionId,mode,disabled,sendClaude,sendText}:{
   const canSend=!disabled && !sending && !uploading && (mode==="claude"?!!text.trim() || ready.length>0:text.length>0);
 
   // Clear right away so sending feels instant; put the draft back if it fails.
-  async function send() {
-    if(!canSend)return;
-    const draft={text,files};
+  async function send(spoken?:string) {
+    if(spoken===undefined?!canSend:disabled || sending || uploading)return;
+    const draft={text:spoken ?? text,files};
     setSending(true);setError("");setText("");setFiles([]);
     input.current?.focus();
     try {
@@ -67,6 +70,32 @@ export function Composer({sessionId,mode,disabled,sendClaude,sendText}:{
     }
     finally{setSending(false);}
   }
+
+  // Voice: the mic shows while the box is empty. Stop to send what you said, or to edit it first.
+  const showMic=mode==="claude" && voiceAvailable && !text && !files.length;
+  async function finishVoice(edit:boolean) {
+    setError("");
+    const spoken=await voice.stop();
+    if(!spoken)return;
+    if(edit){setText(t=>t?`${t} ${spoken}`:spoken);input.current?.focus();}
+    else await send(spoken);
+  }
+
+  if(voice.state!=="idle")return <div className="composer">
+    {error && <p className="composer-error" role="alert">{error}</p>}
+    <div className="composer-row voice-row">
+      <button type="button" className="round-button attach" aria-label="Cancel recording" disabled={voice.state==="transcribing"} onClick={voice.cancel}><CloseIcon /></button>
+      <div className="voice-meter" data-state={voice.state} aria-live="polite">
+        {voice.state==="recording"?<>
+          <span className="voice-dot" style={{transform:`scale(${1+voice.level*1.2})`}} />
+          <span>{Math.floor(voice.seconds/60)}:{String(voice.seconds%60).padStart(2,"0")}</span>
+          <span className="voice-hint">Listening…</span>
+        </>:<span className="voice-hint">Transcribing…</span>}
+      </div>
+      <button type="button" className="round-button attach" aria-label="Stop and edit" disabled={voice.state==="transcribing"} onClick={()=>void finishVoice(true)}><EditIcon /></button>
+      <button type="button" className="round-button send" aria-label="Stop and send" disabled={voice.state==="transcribing"} onClick={()=>void finishVoice(false)}>{voice.state==="transcribing"?"…":<SendIcon />}</button>
+    </div>
+  </div>;
 
   return <div className="composer">
     {suggestions.length>0 && <div className="suggestions" role="listbox">
@@ -93,7 +122,9 @@ export function Composer({sessionId,mode,disabled,sendClaude,sendText}:{
           if(e.key!=="Enter" || e.nativeEvent.isComposing)return;
           if(e.metaKey || e.ctrlKey || ((finePointer() || mode==="terminal") && !e.shiftKey)){e.preventDefault();void send();}
         }} />
-      <button type="button" className="round-button send" aria-label="Send" disabled={!canSend} onClick={()=>void send()}>{sending?"…":<SendIcon />}</button>
+      {showMic && !sending
+        ?<button type="button" className="round-button send" aria-label="Talk" disabled={disabled} onClick={()=>{setError("");void voice.start();}}><MicIcon /></button>
+        :<button type="button" className="round-button send" aria-label="Send" disabled={!canSend} onClick={()=>void send()}>{sending?"…":<SendIcon />}</button>}
     </div>
   </div>;
 }

@@ -11,6 +11,7 @@ import { actionSchema, claudeSendSchema, sessionId as sessionIdSchema, type Acti
 import { apiKey, authorize, hasKey, Pairing, sameOriginSocket, type AuthConfig } from "./auth";
 import { LiveSessions } from "./live";
 import { MAX_UPLOAD_BYTES, saveUpload } from "./uploads";
+import { MAX_AUDIO_BYTES, whisper, type Transcriber } from "./voice";
 
 export interface Backend {
   list(signal:AbortSignal):Promise<SessionList>;
@@ -54,7 +55,7 @@ const json=async<T>(req:IncomingMessage,schema:z.ZodType<T>)=>{
   return parsed.data;
 };
 
-export function createApp({backend,auth,staticDir}:{backend:Backend;auth:AuthConfig;staticDir:string}) {
+export function createApp({backend,auth,staticDir,voice=whisper}:{backend:Backend;auth:AuthConfig;staticDir:string;voice?:Transcriber}) {
   const live=new LiveSessions((id,signal)=>backend.preview(id,signal),{watchPath:id=>backend.transcriptPath?.(id),onChange:backend.onScreenUpdate?(id,changed)=>backend.onScreenUpdate!(id,changed):undefined});
   const lifecycle=new AbortController();
   const signal=(req:IncomingMessage)=>{
@@ -79,8 +80,12 @@ export function createApp({backend,auth,staticDir}:{backend:Backend;auth:AuthCon
     }
     if(!hasKey(key,auth))throw new HttpError(401,"This device isn't paired yet.",{pairing:true});
     if(path==="/api/pair-code" && method==="POST")return send(200,{code:pairing.create()});
-    if(path==="/api/me" && method==="GET")return send(200,{login,host:backend.hostName?.() ?? hostname().replace(/\.local$/,"")});
+    if(path==="/api/me" && method==="GET")return send(200,{login,host:backend.hostName?.() ?? hostname().replace(/\.local$/,""),voice:voice.available()});
     if(path==="/api/sessions" && method==="GET")return send(200,await backend.list(signal(req)));
+    if(path==="/api/transcribe" && method==="POST"){
+      if(!voice.available())throw new HttpError(501,"Voice input isn't set up on your Mac. Run `brew install whisper-cpp ffmpeg` and download a model.");
+      return send(200,{text:await voice.transcribe(await body(req,MAX_AUDIO_BYTES),signal(req))});
+    }
     if(path==="/api/new-window" && method==="POST")return send(200,await backend.action({kind:"new-window"},signal(req)));
     const match=/^\/api\/sessions\/([^/]+)\/([a-z-]+)$/.exec(path);
     if(!match)throw new HttpError(404,"Not found.");

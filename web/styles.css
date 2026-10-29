@@ -136,6 +136,11 @@ button:disabled { opacity: .45; cursor: default; }
 .attach { background: var(--surface-2); }
 .send { background: var(--accent); color: var(--accent-ink); }
 .send:disabled { background: var(--surface-2); color: var(--muted); opacity: 1; }
+.voice-meter { flex: 1; min-width: 0; height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border: 1px solid var(--border); background: var(--surface); border-radius: 20px; font-variant-numeric: tabular-nums; }
+.voice-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); flex-shrink: 0; transition: transform 80ms linear; }
+.voice-hint { color: var(--muted); font-size: 14px; }
+.voice-meter[data-state="transcribing"] .voice-hint { animation: voice-pulse 1.2s ease-in-out infinite; }
+@keyframes voice-pulse { 50% { opacity: .4; } }
 .composer-error { margin: 0 0 6px; color: #ff8a84; font-size: 13px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .chip { display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 4px 6px 4px 10px; border-radius: 999px; background: var(--surface-2); font-size: 12.5px; }

@@ -30,13 +30,14 @@ const enc=encodeURIComponent;
 type SessionAction=Exclude<Action,{kind:"new-window"}> extends infer A?A extends unknown?Omit<A,"sessionId">:never:never;
 
 export const api={
-  me:()=>request<{login:string;host:string}>("/api/me"),
+  me:()=>request<{login:string;host:string;voice?:boolean}>("/api/me"),
   sessions:()=>request<SessionList>("/api/sessions"),
   preview:(id:string)=>request<Preview>(`/api/sessions/${enc(id)}/preview`),
   skills:(id:string)=>request<InputOptions>(`/api/sessions/${enc(id)}/skills`),
   action:(id:string,action:SessionAction)=>request<{sessionId:string|null}>(`/api/sessions/${enc(id)}/action`,{method:"POST",body:JSON.stringify(action)}),
   newWindow:()=>request<{sessionId:string|null}>("/api/new-window",{method:"POST"}),
   sendClaude:(id:string,input:ClaudeSend)=>request<{sessionId:string|null}>(`/api/sessions/${enc(id)}/claude`,{method:"POST",body:JSON.stringify(input)}),
+  transcribe:(audio:Blob)=>request<{text:string}>("/api/transcribe",{method:"POST",body:audio,headers:{"content-type":"application/octet-stream"}}),
   upload:(id:string,file:File)=>request<Upload>(`/api/sessions/${enc(id)}/uploads`,{method:"POST",body:file,headers:{"content-type":"application/octet-stream","x-file-name":enc(file.name)}}),
 };
 
