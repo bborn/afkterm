@@ -36,6 +36,10 @@ export function transcriptMessages(text:string, sessionId:string):ChatMessage[] 
   return messages.slice(-120).reverse().filter(m=>{length+=m.text.length+(m.result?.length||0);return length<=180000;}).reverse();
 }
 
+// iTerm reports cells nothing was ever written to as NUL. Claude Code's menus
+// move the cursor over gaps instead of printing spaces, so turn them back into spaces.
+export const screenText=(text:string)=>text.replaceAll("\0"," ");
+
 const MENU_OPTION=/^(?:([❯›>])\s*)?([1-9])[.)]\s+(.+?)\s*$/;
 const clean=(line:string)=>line.replace(/^[\s│┃|]+|[\s│┃|]+$/g,"");
 

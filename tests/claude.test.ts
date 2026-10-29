@@ -42,6 +42,18 @@ test("boxed prompts with wrapped options parse cleanly",async()=>{
   assert.deepEqual(prompt.options.map(o=>[o.label,o.detail]),[["Yes",undefined],["Yes, and don't ask","again for rm"],["No (esc)",undefined]]);
   assert.match(prompt.text,/rm -rf build/);
 });
+test("AskUserQuestion menus parse when iTerm reports untouched cells as NUL",async()=>{
+  const {liveClaudePrompt,screenText}=await import("../server/claude-view");
+  const screen=[" ☐ current-prod ","  ","│\x00Should I update current-prod now?","│\x00Hatchbox doesn't deploy until you trigger it."," ","❯\x001. Yes, merge and push (Recommended)","\x00\x00\x00\x00\x00I merge main into current-prod and push it."," \x002. I'll push it myself","\x00\x00\x00\x00\x00I give you the exact commands and stop here.","  3. Type something.","─".repeat(40),"  4. Chat about this","","Enter to select · ↑/↓ to navigate · Esc to cancel"].join("\n");
+  const prompt=liveClaudePrompt(screenText(screen))!;
+  assert.equal(prompt.question,"Should I update current-prod now?\nHatchbox doesn't deploy until you trigger it.");
+  assert.deepEqual(prompt.options.map(o=>[o.key,o.label,o.selected,o.detail]),[
+    ["1","Yes, merge and push (Recommended)",true,"I merge main into current-prod and push it."],
+    ["2","I'll push it myself",false,"I give you the exact commands and stop here."],
+    ["3","Type something.",false,undefined],
+    ["4","Chat about this",false,undefined],
+  ]);
+});
 test("numbered lists in Claude's output are not mistaken for a menu",async()=>{
   const {liveClaudePrompt}=await import("../server/claude-view");
   assert.equal(liveClaudePrompt("Here's the plan:\n1. Add tests\n2. Fix bug\n\n> "),undefined);

@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import { z } from "zod";
 import { runAutomation } from "./bridge";
 import { claudeSession, claudeTtys, transcriptPathFor } from "./claude-session";
+import { screenText } from "./claude-view";
 import { inputSkills } from "./input-skills";
 import { groupColor, readTabGroups, type TabGroup } from "./metadata";
 import { readSavedGroups } from "./saved-layout";
@@ -100,6 +101,7 @@ export async function preview(sessionId:string,signal:AbortSignal) {
     raw=z.object({text:z.string(),truncated:z.boolean(),tty:z.string()}).parse(await runAutomation({method:"preview",sessionId},signal));
     ttys.set(sessionId,raw.tty);
   }
+  raw.text=screenText(raw.text);
   return previewSchema.parse({text:raw.text,truncated:raw.truncated,claude:await claudeSession(raw.tty,raw.text,signal)});
 }
 // The Claude transcript behind a session, if its last preview found one.
