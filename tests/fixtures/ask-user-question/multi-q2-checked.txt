@@ -1,0 +1,45 @@
+  descs. Q3 header "Pet", "Which pet?", multiSelect false, options Cat (desc meow), Dog (desc woof).
+  Afterwards reply with only the tool result JSON or a one-line note.
+
+⏺ User declined to answer questions
+  ⎿  · Which layout? (Grid / List)
+     · Which toppings? (Cheese / Ham / Olives)
+     · Which pet? (Cat / Dog)
+
+✻ Brewed for 2s · done 6:44 AM
+
+❯ Call AskUserQuestion once with two questions. Q1 header "Layout", "Which layout?", multiSelect false,
+  options Grid (desc "boxes", preview a 3-line ASCII grid) and List (desc "rows", preview a 3-line ASCII
+  list). Q2 header "Toppings", "Which toppings?", multiSelect true, options Cheese/Ham/Olives with short
+  descs. Afterwards reply only with the tool result JSON or a one-line note.
+
+⏺ User declined to answer questions
+  ⎿  · Which layout? (Grid / List)
+     · Which toppings? (Cheese / Ham / Olives)
+
+⏺ The tool call was rejected again. The user wants to clarify the questions before they go out. Their partial
+  answer was "Grid" for the layout question, and the toppings question got no answer. What would you like to
+  change?
+
+✻ Baked for 3s · done 6:45 AM
+
+❯ Call AskUserQuestion once with two questions. Q1 header "Color", "Which color?", single select, options
+  Red/Blue/Green with short descs. Q2 header "Toppings", "Which toppings?", multiSelect true, options
+  Cheese/Ham/Olives with short descs. Then reply with only the word done.
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☒ Color  ☒ Toppings  ✔ Submit  →
+
+Which toppings?
+
+❯ 1. [✔] Cheese
+         dairy
+  2. [ ] Ham
+         meat
+  3. [✔] Olives
+         veg
+  4. [ ] Type something
+     Submit
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel

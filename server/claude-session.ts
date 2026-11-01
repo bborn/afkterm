@@ -6,6 +6,15 @@ import { z } from "zod";
 import type { ClaudeView } from "./contract";
 import { processClaudeConfigDir } from "./claude-config";
 import { transcriptMessages, liveClaudePrompt, claudeWorking, claudeMode, claudeMenu } from "./claude-view";
+import { claudeQuestion } from "./question";
+
+// What the screen says Claude is waiting on. An AskUserQuestion dialog gets its own
+// card, so it isn't also offered as a numbered prompt or an arrow-key menu.
+export function liveClaudeState(text:string) {
+  const question=claudeQuestion(text);
+  if(question)return {question,prompt:undefined,working:false,mode:claudeMode(text),menu:false};
+  return {prompt:liveClaudePrompt(text),working:claudeWorking(text),mode:claudeMode(text),menu:claudeMenu(text)};
+}
 
 const registrySchema=z.object({pid:z.number().int().positive(),sessionId:z.string().uuid(),cwd:z.string().startsWith("/").max(4096),procStart:z.string()});
 export interface Process {pid:number;tty:string;foreground:number;group:number;started:string;command:string}
@@ -89,10 +98,10 @@ export async function claudeSession(tty:string,text:string,signal:AbortSignal):P
   try {process=foregroundClaude(await psForTtys([tty],signal),tty);}
   catch {return null;}
   if(!process){transcripts.delete(tty);return null;}
-  const fallback:ClaudeView={source:"screen",identity:`${process.pid}:${process.started}`,messages:[],notice:"Saved Claude history is unavailable for this session. Showing terminal output.",prompt:liveClaudePrompt(text),working:claudeWorking(text),mode:claudeMode(text),menu:claudeMenu(text)};
+  const fallback:ClaudeView={source:"screen",identity:`${process.pid}:${process.started}`,messages:[],notice:"Saved Claude history is unavailable for this session. Showing terminal output.",...liveClaudeState(text)};
   try {
     const root=await claudeConfigForProcess(process,signal);
     const view=await readClaudeTranscript(process,root,signal,path=>transcripts.set(tty,path));
-    return view?{...view,prompt:liveClaudePrompt(text),working:claudeWorking(text),mode:claudeMode(text),menu:claudeMenu(text)}:fallback;
+    return view?{...view,...liveClaudeState(text)}:fallback;
   } catch {return fallback;}
 }

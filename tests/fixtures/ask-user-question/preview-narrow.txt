@@ -1,0 +1,45 @@
+  pet?", single select, options Cat/Dog/Fish. Then reply only
+  "done".
+
+⏺ User declined to answer questions
+  ⎿  · Which pet? (Cat / Dog / Fish)
+  ⎿  Interrupted · What should Claude do instead?
+
+✻ Cooked for 1s · done 6:50 AM
+
+❯ Call AskUserQuestion with one question: header "Pet", "Which
+  pet?", single select, options Cat/Dog/Fish. Then reply only
+  "done".
+
+⏺ User declined to answer questions
+  ⎿  · Which pet? (Cat / Dog / Fish)
+
+⏺ The question was rejected again, and the user says they want
+  to clarify it. What would you like to change about the "Which
+  pet?" question?
+
+✻ Cogitated for 3s · done 6:50 AM
+
+❯ Call AskUserQuestion with one question: header "Layout",
+  "Which layout?", single select, options Grid (desc "boxes",
+  preview a 3-line ASCII grid) and List (desc "rows", preview a
+  3-line ASCII list). Then reply only "done".
+
+────────────────────────────────────────────────────────────────
+ ☐ Layout
+
+Which layout?
+
+❯ 1. Grid                         ┌────────────────────────────┐
+  2. List                         │ +----+----+                │
+                                  │ | () | () |                │
+                                  │ +----+----+                │
+                                  └────────────────────────────┘
+
+                                  Notes: press n to add notes
+
+────────────────────────────────────────────────────────────────
+  Chat about this
+
+Enter to select · ↑/↓ to navigate · n to add notes · Esc to
+cancel

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Action, ClaudeSend, InputOptions, LiveMessage, Preview, SessionList, Upload } from "../server/contract";
 
-export type { Action, ChatMessage, ClaudeView, InputSkill, Preview, Prompt, Session, SessionList, Upload } from "../server/contract";
+export type { Action, ChatMessage, ClaudeView, InputSkill, Preview, Prompt, Question, QuestionAnswer, Session, SessionList, Upload } from "../server/contract";
 
 // The device secret this phone got by pairing (see `iterm-web pair`).
 const KEY="iterm-web-key";

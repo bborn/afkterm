@@ -1,0 +1,45 @@
+
+
+✻ Baked for 3s · done 6:45 AM
+
+❯ Call AskUserQuestion once with two questions. Q1 header "Color", "Which color?", single select, options
+  Red/Blue/Green with short descs. Q2 header "Toppings", "Which toppings?", multiSelect true, options
+  Cheese/Ham/Olives with short descs. Then reply with only the word done.
+
+⏺ User answered Claude's questions:
+  ⎿  · Which color? → Blue
+     · Which toppings? → Cheese, Olives, "Pineapple, extra crispy"
+
+⏺ done
+
+✻ Brewed for 3s · done 6:49 AM
+
+❯ Call AskUserQuestion with one question: header "Pet", "Which pet?", single select, options Cat/Dog/Fish
+  with short descs. Then reply only "done".
+
+⏺ User answered Claude's questions:
+  ⎿  · Which pet? → A hedgehog named Spike
+
+⏺ done
+
+✻ Churned for 3s · done 6:50 AM
+
+❯ Call AskUserQuestion with one question: header "Snacks", "Which snacks?", multiSelect true, options
+  Chips/Nuts/Fruit with short descs. Then reply only "done".
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Snacks  ✔ Submit  →
+
+Which snacks?
+
+❯ 1. [ ] Chips
+         salty
+  2. [ ] Nuts
+         crunchy
+  3. [ ] Fruit
+         fresh
+  4. [ ] Type something
+     Submit
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

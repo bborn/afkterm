@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, errorMessage, useLiveSession, useStoredState, type Session, type Upload } from "./api";
 import { Chat, PromptCard } from "./chat";
 import { Composer } from "./composer";
+import { QuestionCard } from "./question";
 import { Sheet, type SheetAction } from "./sheet";
 import { tabLabel } from "./session-list";
 import { BackIcon, MoreIcon } from "./icons";
@@ -50,7 +51,8 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
     const left=pending.filter(p=>Date.now()-p.at<20000 && !users.some(u=>u.startsWith(p.match.slice(0,200))));
     if(left.length!==pending.length)setPending(left);
   },[claude?.messages,pending]);
-  const working=!!claude?.working && !prompt;
+  const question=claude?.question;
+  const working=!!claude?.working && !prompt && !question;
 
   // Follow new output while the reader is at the bottom; otherwise offer a jump.
   const content=chat?JSON.stringify(claude?.messages.at(-1))+claude?.messages.length:preview?.text;
@@ -58,7 +60,7 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
     const el=scroller.current;if(!el)return;
     if(atBottom.current)el.scrollTop=el.scrollHeight;
     else setBehind(true);
-  },[content,chat,prompt?.text,working,pending.length]);
+  },[content,chat,prompt?.text,question?.prompt,working,pending.length]);
   useEffect(()=>{atBottom.current=true;setBehind(false);},[chat]);
   const toBottom=()=>{const el=scroller.current;if(el){el.scrollTo({top:el.scrollHeight,behavior:"smooth"});atBottom.current=true;setBehind(false);}};
 
@@ -89,7 +91,7 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
 
   const status=gone?"This tab was closed"
     :!connected && !preview?"Connecting…"
-    :prompt?"Waiting for you"
+    :prompt || question?"Waiting for you"
     :working?"Claude is working…"
     :session?.cwd.replace(/^\/Users\/[^/]+/,"~") || "";
 
@@ -125,7 +127,7 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
       <button type="button" className="icon-button back" aria-label="All tabs" onClick={back}><BackIcon /></button>
       <div className="topbar-center" role="button" tabIndex={0} aria-label="Show tabs" onClick={()=>setDrawerOpen(true)} onKeyDown={e=>{if(e.key==="Enter")setDrawerOpen(true);}}>
         <p className="topbar-name">{session?tabLabel(session):"Session"}</p>
-        <p className="topbar-status" data-state={prompt?"prompt":working?"working":connected?"ok":"offline"}>{status}</p>
+        <p className="topbar-status" data-state={prompt || question?"prompt":working?"working":connected?"ok":"offline"}>{status}</p>
       </div>
       {claude?.source==="transcript" && <div className="segmented" role="group" aria-label="View">
         <button type="button" aria-pressed={chat} onClick={()=>setMode("chat")}>Chat</button>
@@ -143,9 +145,10 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
     {behind && <button type="button" className="jump" onClick={toBottom}>↓ New output</button>}
     <div className="dock">
       {working && <div className="working"><span className="spinner" aria-hidden="true" />Claude is working<button type="button" className="stop" disabled={busy} onClick={()=>key("escape")}>Stop</button></div>}
+      {question && <QuestionCard question={question} disabled={busy} answer={answer=>run({kind:"question",prompt:question.prompt,answer})} />}
       {prompt && <PromptCard key={prompt.text} prompt={prompt} disabled={busy} choose={k=>{setAnswered(prompt.text);key(k as Key);}} />}
       {claudeKeys
-        ?<ChatKeys mode={claude?.mode} menu={!!claude?.menu && !prompt} busy={busy} expanded={chatKeysExpanded} setExpanded={setChatKeysExpanded} send={key} />
+        ?<ChatKeys mode={claude?.mode} menu={!!claude?.menu && !prompt && !question} busy={busy} expanded={chatKeysExpanded} setExpanded={setChatKeysExpanded} send={key} />
         :showKeys && <TerminalKeys busy={busy} send={key} />}
       <Composer sessionId={sessionId} mode={chat || (claude && mode==="chat")?"claude":"terminal"} disabled={gone}
         sendClaude={async(text:string,files:Upload[])=>{

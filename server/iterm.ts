@@ -8,6 +8,7 @@ import { groupColor, readTabGroups, type TabGroup } from "./metadata";
 import { readSavedGroups } from "./saved-layout";
 import { ItermApi, tabSessions } from "./iterm-api";
 import { uploadPath } from "./uploads";
+import { answerQuestion } from "./question";
 import { actionResult, inputOptionsSchema, listSchema, previewSchema, type Action, type ClaudeSend, type Key, type Session, type SessionList } from "./contract";
 
 // The operations the web app can perform against iTerm2 on this Mac.
@@ -139,7 +140,30 @@ async function type(sessionId:string,text:string,signal:AbortSignal) {
   return {sessionId};
 }
 
+// One answer at a time per terminal: each step reads the screen to see where the cursor is.
+const answering=new Map<string,Promise<unknown>>();
+async function question(input:Extract<Action,{kind:"question"}>,signal:AbortSignal) {
+  const id=input.sessionId;
+  const previous=answering.get(id) ?? Promise.resolve();
+  const run=previous.catch(()=>{}).then(()=>answerQuestion({
+    read:async()=>{
+      signal.throwIfAborted();
+      try {return screenText(await api.screen(id,SCREEN_LINES));}
+      catch(error) {
+        if(/no longer exists/.test(String(error)))throw error;
+        return screenText(z.object({text:z.string()}).parse(await runAutomation({method:"preview",sessionId:id},signal)).text);
+      }
+    },
+    type:async text=>{await type(id,text,signal);},
+  },input.prompt,input.answer));
+  answering.set(id,run);
+  try {await run;}
+  finally {if(answering.get(id)===run)answering.delete(id);}
+  return {sessionId:id};
+}
+
 export async function action(input:Action,signal:AbortSignal) {
+  if(input.kind==="question")return question(input,signal);
   if(input.kind==="send")return type(input.sessionId,input.text+(input.enter?"\r":""),signal);
   if(input.kind==="key")return type(input.sessionId,KEYS[input.key],signal);
   if(input.kind==="focus"){

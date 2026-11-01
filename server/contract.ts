@@ -13,6 +13,19 @@ export const listSchema = z.object({ running: z.boolean(), sessions: z.array(ses
 export type SessionList = z.infer<typeof listSchema>;
 export const keys = ["enter", "tab", "shift-tab", "escape", "ctrl-c", "ctrl-d", "up", "down", "left", "right", "1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
 export type Key = typeof keys[number];
+const notes = z.string().max(4000).refine(s => !/[\x00\x1b]/.test(s), "Terminal control sequences are not supported");
+export const questionAnswerSchema = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("select"), index: z.number().int().min(0).max(30), notes: notes.optional() }).strict(),
+  z.object({ op: z.literal("focus"), index: z.number().int().min(0).max(30) }).strict(),
+  z.object({ op: z.literal("toggle"), index: z.number().int().min(0).max(30) }).strict(),
+  z.object({ op: z.literal("other"), text: notes }).strict(),
+  z.object({ op: z.literal("next"), other: notes.optional() }).strict(),
+  z.object({ op: z.literal("tab"), direction: z.union([z.literal(-1), z.literal(1)]) }).strict(),
+  z.object({ op: z.literal("chat") }).strict(),
+  z.object({ op: z.literal("submit") }).strict(),
+  z.object({ op: z.literal("cancel") }).strict(),
+]);
+export type QuestionAnswer = z.infer<typeof questionAnswerSchema>;
 export const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("focus"), sessionId }).strict(),
   z.object({ kind: z.literal("rename"), sessionId, name: z.string().trim().min(1).max(200) }).strict(),
@@ -23,8 +36,27 @@ export const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("split"), sessionId, direction: z.enum(["horizontal", "vertical"]) }).strict(),
   z.object({ kind: z.literal("new-tab"), sessionId }).strict(),
   z.object({ kind: z.literal("new-window") }).strict(),
+  // Answer Claude's AskUserQuestion dialog. `prompt` is the question the client saw.
+  z.object({ kind: z.literal("question"), sessionId, prompt: z.string().max(2000), answer: questionAnswerSchema }).strict(),
 ]);
 export type Action = z.infer<typeof actionSchema>;
+// Claude Code's AskUserQuestion dialog as read from the screen (see server/question.ts).
+export const questionSchema = z.object({
+  tabs: z.array(z.object({ label: z.string(), answered: z.boolean() })),
+  submitTab: z.boolean(),
+  prompt: z.string(),
+  multiSelect: z.boolean(),
+  options: z.array(z.object({ key: z.string(), label: z.string(), detail: z.string().optional(), checked: z.boolean() })),
+  other: z.object({ key: z.string(), text: z.string(), checked: z.boolean() }).optional(),
+  submit: z.enum(["Submit", "Next"]).optional(),
+  chat: z.object({ key: z.string().optional() }).optional(),
+  // Which row has the cursor: "option:<i>", "other", "submit" or "chat".
+  cursor: z.string().nullable(),
+  preview: z.string().optional(),
+  notes: z.object({ text: z.string(), editing: z.boolean() }).optional(),
+  review: z.object({ answers: z.array(z.object({ question: z.string(), answer: z.string() })), message: z.string() }).optional(),
+});
+export type Question = z.infer<typeof questionSchema>;
 export const actionResult = z.object({ sessionId: sessionId.nullable() });
 export const chatMessageSchema = z.object({
   id:z.string(), role:z.enum(["user","assistant","tool"]), text:z.string(),
@@ -35,7 +67,7 @@ export const promptSchema = z.object({ question:z.string(), options:z.array(z.ob
 export type Prompt = z.infer<typeof promptSchema>;
 export const claudeViewSchema = z.object({
   source:z.enum(["transcript","screen"]), identity:z.string(), messages:z.array(chatMessageSchema), notice:z.string().optional(),
-  prompt:promptSchema.optional(), working:z.boolean().default(false),
+  prompt:promptSchema.optional(), question:questionSchema.optional(), working:z.boolean().default(false),
   // Claude's permission mode from its status line ("plan mode", "accept edits"…); "default" when none is shown.
   mode:z.string().optional(),
   // A select menu is on screen that couldn't be turned into buttons (needs arrows + Enter).

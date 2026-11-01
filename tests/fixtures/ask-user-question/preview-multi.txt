@@ -1,0 +1,45 @@
+
+✻ Churned for 3s · done 6:50 AM
+
+❯ Call AskUserQuestion with one question: header "Snacks", "Which snacks?", multiSelect true, options
+  Chips/Nuts/Fruit with short descs. Then reply only "done".
+
+⏺ User answered Claude's questions:
+  ⎿  · Which snacks? → Nuts, Chips, Pretzels
+
+⏺ done
+
+✻ Cooked for 2s · done 6:50 AM
+
+❯ Call AskUserQuestion with one question: header "Layout", "Which layout?", single select, options Grid (desc
+  "boxes", preview a 3-line ASCII grid) and List (desc "rows", preview a 3-line ASCII list). Then reply only
+  "done".
+
+⏺ User answered Claude's questions:
+  ⎿  · Which layout? → List
+
+⏺ done
+
+✻ Churned for 2s · done 6:50 AM
+
+❯ Call AskUserQuestion once with two questions. Q1 header "Layout", "Which layout?", single select, options
+  Grid (desc "boxes", preview a 3-line ASCII grid) and List (desc "rows", preview a 3-line ASCII list). Q2
+  header "Size", "Which size?", multiSelect true, options S/M/L with short descs. Then reply only "done".
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Layout  ☐ Size  ✔ Submit  →
+
+Which layout?
+
+❯ 1. Grid                         ┌──────────────────────────────────────────┐
+  2. List                         │ +----+----+                              │
+                                  │ | () | () |                              │
+                                  │ +----+----+                              │
+                                  └──────────────────────────────────────────┘
+
+                                  Notes: press n to add notes
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Chat about this
+
+Enter to select · ↑/↓ to navigate · n to add notes · Tab to switch questions · Esc to cancel
