@@ -38,12 +38,26 @@ function tabsLine(line:string) {
 
 // Question text sits in a bordered block on some screens ("│ Which database…").
 const unborder=(line:string)=>line.replace(/^\s*[│┃|]\s?/,"").trimEnd();
-const paragraph=(lines:string[])=>{
+// Claude Code wraps long questions to the terminal width. Rejoin a line with the next
+// when the next line's first word wouldn't have fit on it, so the web app can wrap the
+// text to the phone's width instead; real line breaks and blank lines stay.
+const paragraph=(lines:string[],width:number)=>{
   const out=lines.map(unborder);
   while(out.length && !out[0].trim())out.shift();
   while(out.length && !out.at(-1)!.trim())out.pop();
-  return out.map(l=>l.replace(/^\s+/,"")).join("\n").slice(0,2000);
+  let text="";
+  out.forEach((line,i)=>{
+    const words=line.trim();
+    if(i===0){text=words;return;}
+    const prev=out[i-1];
+    const wrapped=prev.trim() && words && !/^(?:[-*•·]|\d+[.)])\s/.test(words)
+      && prev.length+1+words.split(/\s/)[0].length>width;
+    text+=(wrapped?" ":"\n")+words;
+  });
+  return text.slice(0,QUESTION_MAX);
 };
+
+export const QUESTION_MAX=8000; // the answer route accepts prompts up to this length (contract.ts)
 
 export function claudeQuestion(screen:string):Question|undefined {
   const lines=screen.split("\n").slice(-90).map(l=>l.trimEnd());
@@ -66,6 +80,9 @@ export function claudeQuestion(screen:string):Question|undefined {
   const questionTabs=tabs.filter(t=>!(t.mark==="✔" && t.label==="Submit")).map(t=>({label:t.label.slice(0,100),answered:t.mark!=="☐"}));
   const submitTab=questionTabs.length<tabs.length;
   const body=lines.slice(header+1,footer);
+  // The dialog's rules span the terminal, so the widest one is the wrap width.
+  const width=Math.max(0,...lines.slice(Math.max(0,header-3),footer).filter(l=>SEPARATOR.test(l)).map(l=>l.length))
+    || Math.max(...lines.map(l=>l.length));
 
   const firstOption=body.findLastIndex(l=>/^\s*(?:❯\s*)?1[.)]\s+\S/.test(l));
   if(firstOption<0)return undefined;
@@ -112,7 +129,7 @@ export function claudeQuestion(screen:string):Question|undefined {
       notes.push(line);
     }
     return {tabs:questionTabs,submitTab,prompt:"Review your answers",multiSelect:false,
-      options:numbered.map(r=>({key:r.key,label:r.label.slice(0,300),checked:false})),
+      options:numbered.map(r=>({key:r.key,label:r.label.slice(0,1000),checked:false})),
       cursor:numbered.findIndex(r=>r.cursor)>=0?`option:${numbered.findIndex(r=>r.cursor)}`:null,
       review:{answers:answers.slice(0,20),message:notes.join("\n").slice(0,1000)}};
   }
@@ -147,9 +164,9 @@ export function claudeQuestion(screen:string):Question|undefined {
   const otherText=otherRow && !FREE_TEXT_PLACEHOLDER.test(otherRow.label)?otherRow.label:"";
   return {
     tabs:questionTabs,submitTab,
-    prompt:paragraph(body.slice(0,firstOption)),
+    prompt:paragraph(body.slice(0,firstOption),width),
     multiSelect,
-    options:options.map(r=>({key:r.key,label:r.label.slice(0,300),...(r.detail.length?{detail:r.detail.join(" ").slice(0,600)}:{}),checked:r.box!==undefined && CHECKED.has(r.box)})),
+    options:options.map(r=>({key:r.key,label:r.label.slice(0,1000),...(r.detail.length?{detail:r.detail.join(" ").slice(0,4000)}:{}),checked:r.box!==undefined && CHECKED.has(r.box)})),
     ...(otherRow?{other:{key:otherRow.key,text:otherText.slice(0,4000),checked:multiSelect?otherRow.box!==undefined && CHECKED.has(otherRow.box):!!otherText}}:{}),
     ...(action?.kind==="action"?{submit:action.label}:{}),
     ...(chat?{chat:chat.key?{key:chat.key}:{}}:{}),

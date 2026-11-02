@@ -22,6 +22,26 @@ test("reads a single-select question with free text and Chat about this",()=>{
   assert.equal(q.submit,undefined);
 });
 
+test("keeps a long question and long descriptions whole, unwrapping the terminal's line breaks",()=>{
+  const width=110;
+  const wrap=(text:string,indent="")=>{
+    const out:string[]=[];let line="";
+    for(const w of text.split(" ")){if(line && indent.length+line.length+1+w.length>width){out.push(indent+line);line=w;}else line=line?`${line} ${w}`:w;}
+    return [...out,indent+line].join("\n");
+  };
+  const question="Which color should the header use? "+"The brand guide lists three accents and the design team keeps going back and forth between them. ".repeat(4)+"Pick one.";
+  const detail="Warm and loud. "+"It matches the logo and the old landing page, which is most of what people have seen so far. ".repeat(3)+"The end.";
+  const long=screen("multi-q1")
+    .replace("\nWhich color?\n",`\n${wrap(question)}\n\nShort follow-up line.\n- a list item stays on its own line\n`)
+    .replace("     warm",wrap(detail,"     "));
+  const q=claudeQuestion(long);
+  assert.ok(q);
+  assert.ok(long.split("\n").filter(l=>l.startsWith("Which color") || l.startsWith("The brand")).length>1);   // the fixture really wraps
+  assert.equal(q.prompt,`${question}\n\nShort follow-up line.\n- a list item stays on its own line`);
+  assert.equal(q.options[0].detail,detail);
+  assert.ok(question.length>300);
+});
+
 test("reads a multiSelect question with its checkboxes and Next/Submit row",()=>{
   const q=parse("multi-q2-checked");
   assert.equal(q.prompt,"Which toppings?");

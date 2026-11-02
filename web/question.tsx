@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Question, QuestionAnswer } from "./api";
 
 // Claude Code's AskUserQuestion dialog as a card. Every tap becomes one answer op
@@ -8,6 +8,9 @@ export function QuestionCard({question:q,disabled,answer}:{question:Question;dis
   const [other,setOther]=useState(q.other?.text ?? "");
   const [otherOpen,setOtherOpen]=useState(!!q.other?.text);
   const [notes,setNotes]=useState(q.notes?.text ?? "");
+  const body=useRef<HTMLDivElement>(null);
+  // A new question starts at its top, not wherever the last one was scrolled to.
+  useLayoutEffect(()=>{body.current?.scrollTo({top:0});},[q.prompt]);
   // The screen is the source of truth: pick up what the terminal shows when the question or row changes.
   useEffect(()=>{setOther(q.other?.text ?? "");setOtherOpen(!!q.other?.text);},[q.prompt,q.other?.text]);
   useEffect(()=>{setNotes(q.notes?.text ?? "");},[q.prompt,focused,q.notes?.text]);
@@ -23,6 +26,8 @@ export function QuestionCard({question:q,disabled,answer}:{question:Question;dis
       {q.tabs.map((t,i)=><span key={i} className="question-tab" data-answered={t.answered}>{t.answered?"✓ ":""}{t.label}</span>)}
       {q.submitTab && <span className="question-tab" data-current={!!q.review}>Submit</span>}
     </div>}
+    {/* Like bb's QuestionForm: tabs and footer stay put, everything between them scrolls and nothing is clipped. */}
+    <div className="question-body" ref={body}>
     <p className="prompt-question">{q.prompt}</p>
 
     {q.review
@@ -63,6 +68,7 @@ export function QuestionCard({question:q,disabled,answer}:{question:Question;dis
         {q.multiSelect && q.submit && <button type="button" className="question-primary" disabled={disabled}
           onClick={()=>send({op:"next",...(q.other && (otherOpen || q.other.text)?{other}:{})})}>{q.submit==="Next"?"Next":"Submit"}</button>}
       </div>}
+    </div>
 
     <div className="question-footer">
       {tabs && !q.review && <>

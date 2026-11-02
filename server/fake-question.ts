@@ -6,12 +6,12 @@ import type { QuestionTerminal } from "./question";
 
 interface Q { header:string; question:string; multiSelect:boolean; options:{label:string;description:string;preview?:string}[] }
 const QUESTIONS:Q[]=[
-  {header:"Layout",question:"Which layout should the archive page use?",multiSelect:false,options:[
-    {label:"Grid",description:"Cards in columns",preview:"+--------+--------+\n| post   | post   |\n+--------+--------+\n| post   | post   |\n+--------+--------+"},
+  {header:"Layout",question:"Which layout should the archive page use? The archive currently lists about 340 posts going back to 2014, many of which have no hero image, and the design team wants something that still looks intentional when half the cards are text-only. Mobile traffic is 72% of visits, so whatever we pick has to hold up on a narrow phone first and a desktop second.",multiSelect:false,options:[
+    {label:"Grid",description:"Cards in columns with a thumbnail, title, date and a two-line excerpt; posts without a hero image fall back to a tinted block with the first letter of the title, which keeps the rhythm of the grid intact.",preview:"+--------+--------+\n| post   | post   |\n+--------+--------+\n| post   | post   |\n+--------+--------+"},
     {label:"List",description:"One post per row",preview:"- Dark mode is here\n- Faster builds\n- Our new RSS feed"},
   ]},
-  {header:"Extras",question:"Which extras should ship with it?",multiSelect:true,options:[
-    {label:"Search",description:"Filter posts as you type"},
+  {header:"Extras",question:"Which extras should ship with it? Pick any that you think are worth the extra build time this sprint, keeping in mind that search needs an index rebuild and tags need a migration of the old category data.",multiSelect:true,options:[
+    {label:"Search",description:"Filter posts as you type, matching titles, excerpts and tag names, with results ranked by recency and a keyboard shortcut to focus the box from anywhere on the page."},
     {label:"Tags",description:"Tag chips on each post"},
     {label:"Pagination",description:"20 posts per page"},
   ]},
@@ -21,6 +21,17 @@ const QUESTIONS:Q[]=[
     {label:"Green",description:"Stands out from the header"},
   ]},
 ];
+
+// Claude Code wraps long text to the terminal width, with continuation lines indented.
+function wrap(text:string,width:number,indent=""):string[] {
+  const lines:string[]=[];let line="";
+  for(const word of text.split(/\s+/).filter(Boolean)){
+    if(line && indent.length+line.length+1+word.length>width){lines.push(indent+line);line=word;}
+    else line=line?`${line} ${word}`:word;
+  }
+  if(line)lines.push(indent+line);
+  return lines;
+}
 
 export class FakeQuestion implements QuestionTerminal {
   tab=0; cursor=0; editingNotes=false;
@@ -59,7 +70,7 @@ export class FakeQuestion implements QuestionTerminal {
       return out.join("\n");
     }
     const q=this.q(),t=this.tab;
-    out.push(q.question,"");
+    out.push(...wrap(q.question,width),"");
     const mark=(row:number)=>this.cursor===row?"❯":" ";
     const preview=q.options[this.cursor]?.preview ?? q.options.find(o=>o.preview)?.preview;
     if(q.options.some(o=>o.preview)){
@@ -71,7 +82,7 @@ export class FakeQuestion implements QuestionTerminal {
       for(let i=0;i<Math.max(left.length,right.length);i++)out.push(`${(left[i] ?? "").padEnd(34)}${right[i] ?? ""}`.trimEnd());
     } else {
       q.options.forEach((o,i)=>{
-        out.push(`${mark(i)} ${i+1}. ${q.multiSelect?`[${this.checked[t].has(i)?"✔":" "}] `:""}${o.label}`,`${" ".repeat(q.multiSelect?9:5)}${o.description}`);
+        out.push(`${mark(i)} ${i+1}. ${q.multiSelect?`[${this.checked[t].has(i)?"✔":" "}] `:""}${o.label}`,...wrap(o.description,width," ".repeat(q.multiSelect?9:5)));
       });
       const n=q.options.length;
       out.push(`${mark(n)} ${n+1}. ${q.multiSelect?`[${this.otherChecked[t]?"✔":" "}] `:""}${this.other[t] || (q.multiSelect?"Type something":"Type something.")}`);

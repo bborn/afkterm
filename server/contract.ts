@@ -37,7 +37,7 @@ export const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("new-tab"), sessionId }).strict(),
   z.object({ kind: z.literal("new-window") }).strict(),
   // Answer Claude's AskUserQuestion dialog. `prompt` is the question the client saw.
-  z.object({ kind: z.literal("question"), sessionId, prompt: z.string().max(2000), answer: questionAnswerSchema }).strict(),
+  z.object({ kind: z.literal("question"), sessionId, prompt: z.string().max(8000), answer: questionAnswerSchema }).strict(),
 ]);
 export type Action = z.infer<typeof actionSchema>;
 // Claude Code's AskUserQuestion dialog as read from the screen (see server/question.ts).
