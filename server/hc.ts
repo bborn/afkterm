@@ -21,7 +21,8 @@ export class Hc {
   private listeners=new Set<(event:HcEvent)=>void>();
   private subscribed=false;
   private retry?:ReturnType<typeof setTimeout>;
-  constructor(private path=hcSocket()){}
+  private stream?:Hc;
+  constructor(private path=hcSocket(),private events=false){}
 
   private connect():Promise<Socket> {
     if(this.socket && !this.socket.destroyed)return Promise.resolve(this.socket);
@@ -86,7 +87,10 @@ export class Hc {
   }
 
   // Every fact change on every terminal (status, title, turn, size...).
+  // A subscribed connection only streams events and answers no more calls, so
+  // events get a connection of their own.
   onEvent(listener:(event:HcEvent)=>void):()=>void {
+    if(!this.events)return (this.stream??=new Hc(this.path,true)).onEvent(listener);
     this.listeners.add(listener);
     if(this.socket)this.subscribe();else void this.connect().catch(()=>{});
     return ()=>{this.listeners.delete(listener);};
@@ -94,7 +98,7 @@ export class Hc {
 
   close() {
     clearTimeout(this.retry);this.listeners.clear();
-    this.socket?.destroy();
+    this.socket?.destroy();this.stream?.close();
   }
 
   // Type bytes into a terminal as a person would. `terminal.send` and

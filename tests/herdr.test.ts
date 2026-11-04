@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hc, frame } from "../server/hc";
-import { isClaude, sessionsFrom } from "../server/herdr";
+import { isClaude, sessionsFrom, tabLabel } from "../server/herdr";
 
 const terminal=(address:string,extra:Record<string,unknown>={})=>({
   address,state:"live",cols:120,rows:40,cwd:"/work",title:"",name:null,labels:{},status:null,
@@ -59,7 +59,7 @@ function fakeCore() {
   const path=join(dir,"core.sock");
   const typed:Buffer[]=[];const attaches:unknown[]=[];let closed=false;
   const server=createServer(socket=>{
-    let buffer=Buffer.alloc(0),framed=false;
+    let buffer=Buffer.alloc(0),framed=false,subscribed=false;
     const reply=(id:number,result:unknown)=>{
       const body=Buffer.from(JSON.stringify({jsonrpc:"2.0",id,result}));
       socket.write(framed?frame(0,0,body):Buffer.concat([body,Buffer.from("\n")]));
@@ -74,6 +74,9 @@ function fakeCore() {
             socket.write(JSON.stringify({jsonrpc:"2.0",id:message.id,result:{framed:!!message.params.framed}})+"\n");
             framed=!!message.params.framed;continue;
           }
+          // Like herdr-core, a subscribed connection streams events and answers nothing else.
+          if(subscribed)continue;
+          if(message.method==="events.subscribe"){reply(message.id,{terminals:[]});subscribed=true;continue;}
           if(message.method==="terminal.get")reply(message.id,{address:message.params.terminal,state:"live",cols:200,rows:50});
           continue;
         }
@@ -101,5 +104,27 @@ test("types text by attaching at the terminal's own size, then detaching",async(
     assert.deepEqual(core.attaches,[{terminal:"t5",cols:200,rows:50}]);
     assert.equal(Buffer.concat(core.typed).toString("utf8"),"Hi? (ok!) é\r");
     assert.equal(core.closed(),true);
+  } finally {hc.close();core.close();}
+});
+
+test("names a numbered tab after its agent, like Herdr does",()=>{
+  const byAddress=new Map([
+    ["t1",terminal("t1",{title:"~/work"})],
+    ["t2",terminal("t2",{title:"Fix login",status:{app:"claude-code"}})],
+  ]);
+  const tab=(name:string,ids:string[])=>({id:"tb",name,active:false,terminals:ids.map(terminal=>({terminal,pane:"p",status:null,app:null,name:null}))});
+  assert.equal(tabLabel(tab("3",["t1","t2"]),byAddress),"Fix login");
+  assert.equal(tabLabel(tab("3",["t1"]),byAddress),"3");
+  assert.equal(tabLabel(tab("api",["t2"]),byAddress),"api");
+});
+
+test("events get their own connection, so calls keep working",async()=>{
+  const core=fakeCore();await core.listen();
+  const hc=new Hc(core.path);
+  try {
+    const stop=hc.onEvent(()=>{});
+    await new Promise(r=>setTimeout(r,50));
+    assert.equal((await hc.call("terminal.get",{terminal:"t1"},2000)).cols,200);
+    stop();
   } finally {hc.close();core.close();}
 });

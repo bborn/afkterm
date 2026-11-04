@@ -74,6 +74,17 @@ async function appLayout(signal:AbortSignal):Promise<AppSpace[]|null> {
   } catch {return null;}
 }
 
+// What Herdr calls a tab: the name someone gave it, or, while it still has its
+// automatic number, its lead agent's title (as Herdr's agents panel does).
+export function tabLabel(tab:AppTab,byAddress:Map<string,Terminal>) {
+  if(!/^\d+$/.test(tab.name))return tab.name;
+  const terminals=tab.terminals.map(e=>byAddress.get(e.terminal)).filter((t):t is Terminal=>!!t);
+  const lead=terminals.find(isClaude) ?? terminals[0];
+  const title=(lead?.title || "").trim();
+  const telling=title && title!==lead?.foreground?.name && !/^[~/]/.test(title) && !title.includes("@");
+  return telling?title:tab.name;
+}
+
 // One row per pane, in the order the app shows them. Each space is a group;
 // Herdr has one window.
 export function sessionsFrom(terminals:Terminal[],spaces:AppSpace[]|null):Session[] {
@@ -100,7 +111,7 @@ export function sessionsFrom(terminals:Terminal[],spaces:AppSpace[]|null):Sessio
           if(!t || t.state!=="live")return;
           places.set(t.address,{space:space.id,tab:tab.id,pane:entry.pane});
           const row=base(t);
-          sessions.push({...row,name:row.name || entry.name || "",tabName:tab.name,group,tabIndex,paneIndex:pi+1,
+          sessions.push({...row,name:row.name || entry.name || "",tabName:tabLabel(tab,byAddress),group,tabIndex,paneIndex:pi+1,
             selected:space.active && tab.active && pi===0});
         });
       }
