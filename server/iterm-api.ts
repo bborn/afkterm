@@ -76,7 +76,7 @@ export class ItermApi {
         const socket=await new Promise<WebSocket>((resolve,reject)=>{
           const ws=new WebSocket("ws://localhost/",["api.iterm2.com"],{
             createConnection:()=>connect({path:this.socketPath}),
-            headers:{origin:"ws://localhost/","x-iterm2-cookie":credentials.cookie,"x-iterm2-key":credentials.key,"x-iterm2-advisory-name":"iterm-web","x-iterm2-library-version":"iterm-web 0.1.1","x-iterm2-disable-auth-ui":"true"},
+            headers:{origin:"ws://localhost/","x-iterm2-cookie":credentials.cookie,"x-iterm2-key":credentials.key,"x-iterm2-advisory-name":"afkterm","x-iterm2-library-version":"afkterm 0.2.0","x-iterm2-disable-auth-ui":"true"},
             handshakeTimeout:5000,maxPayload:16*1024*1024,
           });
           ws.once("open",()=>resolve(ws));

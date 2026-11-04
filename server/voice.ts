@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { CONFIG_DIR, envVar } from "./config";
 
 export const MAX_AUDIO_BYTES=25*1024*1024;
 
@@ -12,10 +13,10 @@ const BIN_DIRS=["/opt/homebrew/bin","/usr/local/bin","/usr/bin"];
 const which=(name:string)=>BIN_DIRS.map(dir=>join(dir,name)).find(existsSync);
 
 // whisper.cpp models, in the order we'd rather use them: fast enough on a Mac, good enough to send.
-const MODEL_DIRS=()=>[join(homedir(),".iterm-web","models"),join(homedir(),".cache","whisper.cpp")];
+const MODEL_DIRS=()=>[join(CONFIG_DIR,"models"),join(homedir(),".cache","whisper.cpp")];
 const MODEL_ORDER=["large-v3-turbo","small.en","small","base.en","base","medium.en","medium","tiny.en","tiny"];
 function findModel() {
-  const configured=process.env.ITERM_WEB_WHISPER_MODEL;
+  const configured=envVar("WHISPER_MODEL");
   if(configured)return existsSync(configured)?configured:undefined;
   const found=MODEL_DIRS().flatMap(dir=>{try{return readdirSync(dir).filter(f=>/^ggml-.+\.bin$/.test(f)).map(f=>join(dir,f));}catch{return [];}});
   const rank=(path:string)=>{const i=MODEL_ORDER.findIndex(m=>path.endsWith(`ggml-${m}.bin`));return i<0?MODEL_ORDER.length:i;};
@@ -31,7 +32,7 @@ export const whisper:Transcriber={
   async transcribe(audio,signal) {
     const whisperCli=which("whisper-cli"),ffmpeg=which("ffmpeg"),model=findModel();
     if(!whisperCli || !ffmpeg || !model)throw Error("Voice input needs whisper-cli, ffmpeg and a whisper model on your Mac. Run `brew install whisper-cpp ffmpeg`.");
-    const dir=await mkdtemp(join(tmpdir(),"iterm-web-voice-"));
+    const dir=await mkdtemp(join(tmpdir(),"afkterm-voice-"));
     try {
       await writeFile(join(dir,"in"),audio,{mode:0o600});
       const run=promisify(execFile);

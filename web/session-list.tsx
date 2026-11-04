@@ -55,7 +55,7 @@ export function SessionList({host,app="iTerm2",data,error,refresh,open}:{host:st
 
   return <div className="screen">
     <header className="topbar">
-      <div className="topbar-title"><span className="host-dot" data-ok={!error && !!data} />{host || "iTerm Web"}</div>
+      <div className="topbar-title"><span className="host-dot" data-ok={!error && !!data} />{host || "afkterm"}</div>
       <button type="button" className="icon-button" aria-label="New tab or window" disabled={busy} onClick={()=>setMenu(true)}><PlusIcon /></button>
     </header>
     <div className="search"><input type="search" placeholder="Search tabs, folders…" value={query} onChange={e=>setQuery(e.target.value)} autoCapitalize="off" autoCorrect="off" /></div>

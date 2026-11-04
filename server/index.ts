@@ -28,7 +28,7 @@ export interface Backend {
 
 class HttpError extends Error { constructor(public status:number,message:string,public extra:Record<string,unknown>={}){super(message);} }
 
-// No framing (clickjacking), and nothing loads from anywhere but iterm-web itself:
+// No framing (clickjacking), and nothing loads from anywhere but afkterm itself:
 // in particular, images in Claude's Markdown can't leak data to other servers.
 const securityHeaders=(host:string)=>({
   "x-frame-options":"DENY",
@@ -72,12 +72,12 @@ export function createApp({backend,auth,staticDir,voice=whisper}:{backend:Backen
     const send=(status:number,data:unknown)=>{res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(data));};
     const method=req.method || "GET";
     const key=apiKey(req.headers);
-    // A new device trades a pairing code (from `iterm-web pair`) for the device secret.
+    // A new device trades a pairing code (from `afkterm pair`) for the device secret.
     if(path==="/api/pair" && method==="POST"){
       if(key!=="pair")throw new HttpError(403,"Missing app header.");
       const {code}=await json(req,z.object({code:z.string().max(20)}));
       if(!auth.key)return send(200,{key:""});
-      if(!pairing.redeem(code))throw new HttpError(403,"That code didn't work. Run `iterm-web pair` on your Mac for a new one.");
+      if(!pairing.redeem(code))throw new HttpError(403,"That code didn't work. Run `afkterm pair` on your Mac for a new one.");
       return send(200,{key:auth.key});
     }
     if(!hasKey(key,auth))throw new HttpError(401,"This device isn't paired yet.",{pairing:true});
@@ -181,13 +181,13 @@ function staticRoot() {
 }
 
 export async function startServer({port,auth,fake=false,terminals="iterm"}:{port:number;auth:AuthConfig;fake?:boolean;terminals?:"iterm"|"herdr"}) {
-  if(!fake && !auth.key)throw new Error("No device secret configured. Run `iterm-web setup`.");
-  if(!auth.allowedLogins.size && !auth.allowLocal)throw new Error("No Tailscale login is allowed. Run `iterm-web setup`, or set ITERM_WEB_ALLOWED_LOGINS.");
+  if(!fake && !auth.key)throw new Error("No device secret configured. Run `afkterm setup`.");
+  if(!auth.allowedLogins.size && !auth.allowLocal)throw new Error("No Tailscale login is allowed. Run `afkterm setup`, or set AFKTERM_ALLOWED_LOGINS.");
   const backend:Backend=fake?(await import("./fake")).fake:terminals==="herdr"?await import("./herdr"):await import("./iterm");
   const {server}=createApp({backend,auth,staticDir:staticRoot()});
-  // Loopback only: other devices reach iterm-web solely through Tailscale Serve.
+  // Loopback only: other devices reach afkterm solely through Tailscale Serve.
   await new Promise<void>((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>resolve());});
-  console.log(`iterm-web listening on http://127.0.0.1:${port}${fake?" (demo data)":terminals==="herdr"?" (Herdr)":""}`);
+  console.log(`afkterm listening on http://127.0.0.1:${port}${fake?" (demo data)":terminals==="herdr"?" (Herdr)":""}`);
   for(const sig of ["SIGINT","SIGTERM"] as const)process.on(sig,()=>{server.close();process.exit(0);});
   return server;
 }

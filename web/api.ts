@@ -3,13 +3,13 @@ import type { Action, ClaudeSend, InputOptions, LiveMessage, Preview, SessionLis
 
 export type { Action, ChatMessage, ClaudeView, InputSkill, Preview, Prompt, Question, QuestionAnswer, Session, SessionList, Upload } from "../server/contract";
 
-// The device secret this phone got by pairing (see `iterm-web pair`).
-const KEY="iterm-web-key";
-const deviceKey=()=>{try{return localStorage.getItem(KEY) || "";}catch{return "";}};
-export const UNPAIRED="iterm-web:unpaired";
+// The device secret this phone got by pairing (see `afkterm pair`).
+const KEY="afkterm-key", LEGACY_KEY="iterm-web-key";
+const deviceKey=()=>{try{return localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || "";}catch{return "";}};
+export const UNPAIRED="afkterm:unpaired";
 
 async function request<T>(path:string,init:RequestInit={}):Promise<T> {
-  const res=await fetch(path,{...init,headers:{"x-iterm-web":deviceKey() || "unpaired",...(init.body && typeof init.body==="string"?{"content-type":"application/json"}:{}),...init.headers}});
+  const res=await fetch(path,{...init,headers:{"x-afkterm":deviceKey() || "unpaired",...(init.body && typeof init.body==="string"?{"content-type":"application/json"}:{}),...init.headers}});
   const data=await res.json().catch(()=>({error:`Request failed (${res.status})`}));
   if(data.pairing)window.dispatchEvent(new Event(UNPAIRED));
   if(!res.ok)throw new Error(data.error || `Request failed (${res.status})`);
@@ -18,7 +18,7 @@ async function request<T>(path:string,init:RequestInit={}):Promise<T> {
 
 // Trade a one-time code for the device secret.
 export async function pair(code:string) {
-  const {key}=await request<{key:string}>("/api/pair",{method:"POST",body:JSON.stringify({code}),headers:{"x-iterm-web":"pair"}});
+  const {key}=await request<{key:string}>("/api/pair",{method:"POST",body:JSON.stringify({code}),headers:{"x-afkterm":"pair"}});
   localStorage.setItem(KEY,key);
 }
 // A pairing link looks like https://<mac>:<port>/#pair=123456.

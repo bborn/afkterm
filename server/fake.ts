@@ -4,7 +4,7 @@ import { FakeQuestion } from "./fake-question";
 import { answerQuestion } from "./question";
 
 // A stand-in for iTerm2 so the UI can be developed and demoed on any machine
-// (`iterm-web start --demo`). Nothing here touches a real terminal.
+// (`afkterm start --demo`). Nothing here touches a real terminal.
 const HOME="/Users/sam";
 const session=(id:string,o:Partial<Session>):Session=>({id,name:"zsh",tabName:"",windowId:1,windowName:"Window 1",group:null,tabIndex:1,paneIndex:1,tty:`/dev/ttys00${id.length}`,profile:"Default",cwd:HOME,processing:false,atPrompt:true,selected:false,claude:false,...o});
 const shop={id:"g1",name:"storefront",color:"#e8833a",collapsed:false};
@@ -87,7 +87,7 @@ export const fake={
   },
   async sendClaude(id:string,input:ClaudeSend) {
     const tab=find(id);
-    tab.chat?.push({id:String(Date.now()),role:"user",text:[input.text,...input.files.map(f=>`Attached file: ${HOME}/.iterm-web/attachments/${f.name}`)].join("\n")});
+    tab.chat?.push({id:String(Date.now()),role:"user",text:[input.text,...input.files.map(f=>`Attached file: ${HOME}/.afkterm/attachments/${f.name}`)].join("\n")});
     working.add(id);
     if(id==="claude-question" && !tab.ask){setTimeout(()=>{working.delete(id);ask(tab);},2000);return {sessionId:id};}
     setTimeout(()=>{working.delete(id);tab.chat?.push({id:String(Date.now()+1),role:"assistant",text:"On it."});},2500);

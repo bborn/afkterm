@@ -1,9 +1,10 @@
 {
-  "name": "iterm-web",
-  "version": "0.1.1",
-  "description": "Your iTerm2 tabs and Claude Code sessions on your phone, over Tailscale.",
+  "name": "afkterm",
+  "version": "0.2.0",
+  "description": "Your iTerm2 or Herdr terminals and Claude Code sessions on your phone, over Tailscale.",
   "keywords": [
     "iterm2",
+    "herdr",
     "claude",
     "claude-code",
     "terminal",
@@ -16,12 +17,13 @@
   "author": "Bruno Bornsztein",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bborn/iterm-web.git"
+    "url": "git+https://github.com/bborn/afkterm.git"
   },
-  "homepage": "https://github.com/bborn/iterm-web#readme",
-  "bugs": "https://github.com/bborn/iterm-web/issues",
+  "homepage": "https://github.com/bborn/afkterm#readme",
+  "bugs": "https://github.com/bborn/afkterm/issues",
   "type": "module",
   "bin": {
+    "afkterm": "dist/cli.js",
     "iterm-web": "dist/cli.js"
   },
   "files": [

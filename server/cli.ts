@@ -1,25 +1,25 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { newKey, parseLogins } from "./auth";
-import { allowedHosts, CONFIG_FILE, LOG_FILE, loadConfig, saveConfig, type Config } from "./config";
+import { allowedHosts, CONFIG_FILE, LOG_FILE, loadConfig, migrateLegacyHome, saveConfig, type Config } from "./config";
 
-const VERSION="0.1.1";
-const HELP=`iterm-web ${VERSION}: your iTerm2 tabs and Claude Code sessions, on your phone.
+const VERSION="0.2.0";
+const HELP=`afkterm ${VERSION}: your iTerm2 or Herdr terminals and Claude Code sessions, on your phone.
 
 Usage:
-  iterm-web setup [--login <tailscale-login>] [--https-port <port>] [--port <port>]
+  afkterm setup [--login <tailscale-login>] [--https-port <port>] [--port <port>]
                   [--backend iterm|herdr]
       Check requirements, install the login agent and publish it on your tailnet.
       --backend herdr shows your Herdr terminals instead of iTerm2's.
-  iterm-web pair [--reset]
+  afkterm pair [--reset]
       Show a code and QR link to connect a phone. --reset signs out every
       paired device first.
-  iterm-web doctor      Check requirements without changing anything.
-  iterm-web status      Show whether it's running and where.
-  iterm-web restart     Restart the background server (e.g. after upgrading).
-  iterm-web logs        Show recent log output.
-  iterm-web uninstall   Remove the login agent and stop serving it on the tailnet.
-  iterm-web start [--demo]
+  afkterm doctor      Check requirements without changing anything.
+  afkterm status      Show whether it's running and where.
+  afkterm restart     Restart the background server (e.g. after upgrading).
+  afkterm logs        Show recent log output.
+  afkterm uninstall   Remove the login agent and stop serving it on the tailnet.
+  afkterm start [--demo]
       Run the server in the foreground. --demo serves made-up sessions on
       http://127.0.0.1:<port> with no Tailscale needed.
 `;
@@ -48,7 +48,7 @@ function parse(argv:string[]):{command:string;flags:Flags} {
 
 const mark=(ok:boolean,fatal?:boolean)=>ok?"\x1b[32m✓\x1b[0m":fatal?"\x1b[31m✗\x1b[0m":"\x1b[33m!\x1b[0m";
 const say=(s="")=>process.stdout.write(s+"\n");
-// `iterm-web status | head` closes the pipe early; that's not an error.
+// `afkterm status | head` closes the pipe early; that's not an error.
 process.stdout.on("error",error=>{if((error as NodeJS.ErrnoException).code==="EPIPE")process.exit(0);throw error;});
 
 // Ask the running server for a one-time code and show it with a QR link.
@@ -64,6 +64,7 @@ async function pair(config:Config) {
 
 async function main() {
   const {command,flags}=parse(process.argv.slice(2));
+  migrateLegacyHome();
   const config:Config={...loadConfig()};
   if(flags.port)config.port=flags.port;
   if(flags.httpsPort)config.httpsPort=flags.httpsPort;
@@ -93,7 +94,7 @@ async function main() {
     }
     const cli=fileURLToPath(import.meta.url);
     if(cli.endsWith(".ts"))throw new Error("Run setup from the built package (npm run build, then node dist/cli.js setup).");
-    if(cli.includes("/_npx/"))throw new Error("Install iterm-web first so the login agent has a stable path:\n  npm install -g iterm-web\n  iterm-web setup");
+    if(cli.includes("/_npx/"))throw new Error("Install afkterm first so the login agent has a stable path:\n  npm install -g afkterm\n  afkterm setup");
     const logins=flags.login.length?flags.login:config.allowedLogins.length?config.allowedLogins:[result.tailscale!.login];
     if(!logins[0])throw new Error("Couldn't tell which Tailscale login to allow. Pass --login you@example.com.");
     config.allowedLogins=logins;
@@ -111,14 +112,14 @@ async function main() {
     const sessions=await setup.local(config,"/api/sessions").then(()=>null,(e:Error)=>e.message);
     if(sessions)say(config.backend==="herdr"
       ?`\n${mark(false)} The server is running but can't read Herdr yet: ${sessions}`
-      :`\n${mark(false)} The server is running but can't read iTerm2 yet: ${sessions}\n  If macOS asked whether "node" may control iTerm2, click OK, then run: iterm-web restart`);
-    say(`\n${mark(true)} iterm-web is running at https://${config.publicHost}`);
+      :`\n${mark(false)} The server is running but can't read iTerm2 yet: ${sessions}\n  If macOS asked whether "node" may control iTerm2, click OK, then run: afkterm restart`);
+    say(`\n${mark(true)} afkterm is running at https://${config.publicHost}`);
     await pair(config);
     return;
   }
 
   if(command==="pair"){
-    if(!config.key || !config.publicHost)throw new Error("Run `iterm-web setup` first.");
+    if(!config.key || !config.publicHost)throw new Error("Run `afkterm setup` first.");
     if(flags.reset){
       config.key=newKey();saveConfig(config);
       await setup.restartAgent();
@@ -138,7 +139,7 @@ async function main() {
       const ts=await setup.tailscaleState(bin).catch(()=>null);
       if(ts?.dnsName){
         const serve=await setup.serveState(bin,ts.dnsName,config.httpsPort);
-        say(`Tailscale:         ${serve.target===`http://127.0.0.1:${config.port}`?`https://${ts.dnsName}:${config.httpsPort}`:"not serving iterm-web"}${serve.funnel?"  ⚠ Funnel is ON (requests are refused)":""}`);
+        say(`Tailscale:         ${serve.target===`http://127.0.0.1:${config.port}`?`https://${ts.dnsName}:${config.httpsPort}`:"not serving afkterm"}${serve.funnel?"  ⚠ Funnel is ON (requests are refused)":""}`);
       }
     }
     say(`Allowed logins:    ${config.allowedLogins.join(", ") || "(none)"}`);
@@ -146,7 +147,14 @@ async function main() {
     return;
   }
 
-  if(command==="restart"){await setup.restartAgent();say("Restarted.");return;}
+  if(command==="restart"){
+    // An install from before the rename still runs the old login agent: replace it.
+    if(setup.hasLegacyAgent() && await setup.agentState()==="not installed"){
+      const cli=fileURLToPath(import.meta.url);
+      setup.writeAgent(cli);await setup.loadAgent();
+    } else await setup.restartAgent();
+    say("Restarted.");return;
+  }
   if(command==="logs"){
     try {say(readFileSync(LOG_FILE,"utf8").split("\n").slice(-60).join("\n"));} catch {say(`No log yet at ${LOG_FILE}`);}
     return;
@@ -161,4 +169,4 @@ async function main() {
   throw new Error(`Unknown command "${command}".\n\n${HELP}`);
 }
 
-main().catch(error=>{process.stderr.write(`iterm-web: ${error instanceof Error?error.message:String(error)}\n`);process.exit(1);});
+main().catch(error=>{process.stderr.write(`afkterm: ${error instanceof Error?error.message:String(error)}\n`);process.exit(1);});

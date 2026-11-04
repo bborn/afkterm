@@ -16,7 +16,7 @@ const header=(headers:IncomingHttpHeaders,name:string)=>{const v=headers[name];r
 // Serve (and carry the identity) or from something running on this Mac.
 export function authorize(headers:IncomingHttpHeaders,config:AuthConfig):AuthResult {
   // Funnel publishes a Serve port to the whole internet. Never answer those requests.
-  if(header(headers,"tailscale-funnel-request"))return {ok:false,status:403,reason:"iterm-web does not accept requests through Tailscale Funnel. Turn Funnel off for this port."};
+  if(header(headers,"tailscale-funnel-request"))return {ok:false,status:403,reason:"afkterm does not accept requests through Tailscale Funnel. Turn Funnel off for this port."};
   // A web page on this Mac can point its own domain at 127.0.0.1 (DNS rebinding);
   // its requests then carry that domain as Host.
   if(config.hosts && !config.hosts.has((header(headers,"host") || "").toLowerCase()))return {ok:false,status:421,reason:"Unexpected host."};
@@ -26,21 +26,22 @@ export function authorize(headers:IncomingHttpHeaders,config:AuthConfig):AuthRes
     return {ok:false,status:403,reason:`${login} is not allowed to use this Mac's terminals.`};
   }
   if(config.allowLocal)return {ok:true,login:"local"};
-  return {ok:false,status:401,reason:"Open iterm-web through its Tailscale URL."};
+  return {ok:false,status:401,reason:"Open afkterm through its Tailscale URL."};
 }
 
 // Every API call carries the device secret in a custom header. That also stops
 // cross-site requests: a page on another site can't add custom headers without a
-// CORS preflight, which iterm-web never answers.
-export const API_HEADER="x-iterm-web";
+// CORS preflight, which afkterm never answers.
+export const API_HEADER="x-afkterm";
+const LEGACY_HEADER="x-iterm-web";  // sent by pages loaded before the rename
 const same=(a:string,b:string)=>{const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length && timingSafeEqual(x,y);};
 export function hasKey(value:string|null|undefined,config:AuthConfig) {
   if(!config.key)return true;
   return !!value && same(value,config.key);
 }
-export function apiKey(headers:IncomingHttpHeaders) { return header(headers,API_HEADER); }
+export function apiKey(headers:IncomingHttpHeaders) { return header(headers,API_HEADER) ?? header(headers,LEGACY_HEADER); }
 
-// Live connections must also come from iterm-web's own page.
+// Live connections must also come from afkterm's own page.
 export function sameOriginSocket(headers:IncomingHttpHeaders,config:AuthConfig) {
   const origin=header(headers,"origin");
   if(!origin)return false;

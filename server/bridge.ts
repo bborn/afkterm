@@ -13,7 +13,7 @@ function run() {
     if (!action || action.kind !== 'new-window') throw Error('iTerm2 is not running. Open iTerm2 on this Mac first.');
   }
   if (input.method === 'api-auth') {
-    var credentials = app.requestCookie({andKeyForAppNamed:'iterm-web'}).split(' ');
+    var credentials = app.requestCookie({andKeyForAppNamed:'afkterm'}).split(' ');
     return JSON.stringify({cookie:credentials[0],key:credentials[1]});
   }
   if (action && action.kind === 'new-window') {
@@ -78,7 +78,7 @@ export function automationError(error: unknown): Error {
   const e = error as { message?: string; stderr?: string; killed?: boolean; code?: string };
   const message = e.stderr || e.message || String(error);
   if (e.killed || /timed out|timeout/i.test(message)) return new Error("iTerm2 did not respond. When you have access to the Mac, check for an Automation permission prompt or an iTerm dialog. Automation access is under System Settings → Privacy & Security → Automation. If you sent input, check the session before sending it again.");
-  if (/-1743|not authorized|not permitted/i.test(message)) return new Error("macOS denied access to iTerm2. In System Settings → Privacy & Security → Automation, allow iterm-web (or node, or your terminal app) to control iTerm2, then retry.");
+  if (/-1743|not authorized|not permitted/i.test(message)) return new Error("macOS denied access to iTerm2. In System Settings → Privacy & Security → Automation, allow afkterm (or node, or your terminal app) to control iTerm2, then retry.");
   if (/-10814|can't be found|not found/i.test(message)) return new Error("iTerm2 is not installed on this Mac. Install and open iTerm2, then retry.");
   return new Error(message.slice(0,2000));
 }

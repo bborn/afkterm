@@ -1,10 +1,11 @@
 import { createConnection, type Socket } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { envVar } from "./config";
 
 // herdr-core's API: JSON-RPC 2.0, one message per line on its unix socket.
 // `hc schema` documents every method.
-export const hcSocket=()=>process.env.ITERM_WEB_HC_SOCKET || join(homedir(),".local","state","herdr-core","default","default.sock");
+export const hcSocket=()=>envVar("HC_SOCKET") || join(homedir(),".local","state","herdr-core","default","default.sock");
 
 export class HcError extends Error {
   constructor(message:string,public kind?:string){super(message);}

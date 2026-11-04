@@ -9,8 +9,16 @@ import { Hc } from "./hc";
 import { LOG_FILE, type Config } from "./config";
 
 const run=promisify(execFile);
-export const LABEL="dev.iterm-web";
+export const LABEL="dev.afkterm";
 export const PLIST=join(homedir(),"Library","LaunchAgents",`${LABEL}.plist`);
+// The login agent from before the rename to afkterm.
+const LEGACY_LABEL="dev.iterm-web";
+const LEGACY_PLIST=join(homedir(),"Library","LaunchAgents",`${LEGACY_LABEL}.plist`);
+export const hasLegacyAgent=()=>existsSync(LEGACY_PLIST);
+async function removeLegacyAgent() {
+  await run("/bin/launchctl",["bootout",`${domain()}/${LEGACY_LABEL}`]).catch(()=>{});
+  rmSync(LEGACY_PLIST,{force:true});
+}
 const domain=()=>`gui/${userInfo().uid}`;
 
 export type Check={name:string;ok:boolean;fatal?:boolean;detail:string};
@@ -60,7 +68,7 @@ export async function checks(config:Config):Promise<{checks:Check[];tailscale?:T
   const [major,minor]=process.versions.node.split(".").map(Number);
   add({name:"Node.js",ok:major>20 || (major===20 && minor>=12),fatal:true,detail:`v${process.versions.node}${major<20?" (needs 20.12 or newer)":""}`});
   if(process.platform!=="darwin"){
-    add({name:"macOS",ok:false,fatal:true,detail:"iterm-web runs only on macOS."});
+    add({name:"macOS",ok:false,fatal:true,detail:"afkterm runs only on macOS."});
     return {checks:out};
   }
   if(config.backend==="herdr")await herdrChecks(add);
@@ -77,7 +85,7 @@ async function herdrChecks(add:(c:Check)=>Check) {
     const {terminals}=await hc.call<{terminals:unknown[]}>("terminal.list",{},8000);
     add({name:"herdr-core",ok:true,detail:`running (${terminals.length} terminals)`});
   } catch(error) {
-    add({name:"herdr-core",ok:false,detail:`${error instanceof Error?error.message:String(error)} iterm-web will show your terminals once it is running.`});
+    add({name:"herdr-core",ok:false,detail:`${error instanceof Error?error.message:String(error)} afkterm will show your terminals once it is running.`});
   } finally {hc.close();}
 }
 
@@ -96,7 +104,7 @@ async function itermChecks(add:(c:Check)=>Check) {
       await Promise.race([api.listSessions(),new Promise((_,reject)=>setTimeout(()=>reject(new Error("timed out")),8000))]);
       add({name:"iTerm2 Python API",ok:true,detail:"enabled (fast updates)"});
     } catch {
-      add({name:"iTerm2 Python API",ok:false,detail:"off. iterm-web still works, but slower. Turn it on in iTerm2 → Settings → General → Magic → Enable Python API."});
+      add({name:"iTerm2 Python API",ok:false,detail:"off. afkterm still works, but slower. Turn it on in iTerm2 → Settings → General → Magic → Enable Python API."});
     } finally {api.close();}
   }
 }
@@ -107,7 +115,7 @@ async function tailscaleChecks(config:Config,out:Check[],add:(c:Check)=>Check):P
   let tailscale:TailscaleState|undefined;
   try {tailscale=await tailscaleState(bin);} catch(error) {add({name:"Tailscale",ok:false,fatal:true,detail:`Could not read status: ${error instanceof Error?error.message:error}`});return {checks:out,bin};}
   add({name:"Tailscale",ok:tailscale.running && !!tailscale.dnsName,fatal:true,detail:tailscale.running?`${tailscale.dnsName} (${tailscale.login || "no login"})`:"not connected. Open Tailscale and sign in."});
-  if(tailscale.tagged)add({name:"Tailscale identity",ok:false,fatal:true,detail:"This Mac is a tagged device, so Tailscale can't tell iterm-web who is connecting. Use an untagged (user-owned) device."});
+  if(tailscale.tagged)add({name:"Tailscale identity",ok:false,fatal:true,detail:"This Mac is a tagged device, so Tailscale can't tell afkterm who is connecting. Use an untagged (user-owned) device."});
   if(tailscale.running && tailscale.dnsName){
     const serve=await serveState(bin,tailscale.dnsName,config.httpsPort);
     const ours=serve.target===`http://127.0.0.1:${config.port}`;
@@ -141,6 +149,7 @@ export function writeAgent(cliPath:string) {
 `);
 }
 export async function loadAgent() {
+  await removeLegacyAgent();
   await run("/bin/launchctl",["bootout",`${domain()}/${LABEL}`]).catch(()=>{});
   await run("/bin/launchctl",["bootstrap",domain(),PLIST]);
 }
@@ -148,6 +157,7 @@ export async function restartAgent() {
   await run("/bin/launchctl",["kickstart","-k",`${domain()}/${LABEL}`]);
 }
 export async function removeAgent() {
+  await removeLegacyAgent();
   await run("/bin/launchctl",["bootout",`${domain()}/${LABEL}`]).catch(()=>{});
   rmSync(PLIST,{force:true});
 }
@@ -160,7 +170,7 @@ export async function agentState():Promise<string> {
 
 // Talk to the running server the way Tailscale Serve and a paired phone would.
 export async function local(config:Config,path:string,init:RequestInit={}) {
-  const res=await fetch(`http://127.0.0.1:${config.port}${path}`,{...init,headers:{"x-iterm-web":config.key || "","tailscale-user-login":config.allowedLogins[0] || "",...init.headers},signal:AbortSignal.timeout(30000)});
+  const res=await fetch(`http://127.0.0.1:${config.port}${path}`,{...init,headers:{"x-afkterm":config.key || "","tailscale-user-login":config.allowedLogins[0] || "",...init.headers},signal:AbortSignal.timeout(30000)});
   const data=await res.json().catch(()=>({}));
   if(!res.ok)throw new Error(data.error || `HTTP ${res.status}`);
   return data;

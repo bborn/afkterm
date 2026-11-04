@@ -62,23 +62,25 @@ function fakeBackend() {
   return {backend,actions,reads:()=>reads};
 }
 async function start(backend:Backend,voice?:Transcriber) {
-  const dir=await mkdtemp(join(tmpdir(),"iterm-web-static-"));
+  const dir=await mkdtemp(join(tmpdir(),"afkterm-static-"));
   await writeFile(join(dir,"index.html"),"<h1>app</h1>");
   const {server}=createApp({backend,auth:{...auth,key:KEY},staticDir:dir,voice:voice ?? {available:()=>false,transcribe:async()=>""}});
   await new Promise<void>(r=>server.listen(0,"127.0.0.1",r));
   const base=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {base,close:async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));await rm(dir,{recursive:true,force:true});}};
 }
-const headers={"tailscale-user-login":login,"x-iterm-web":KEY};
+const headers={"tailscale-user-login":login,"x-afkterm":KEY};
 
 test("API requires identity and the device secret; actions are validated and scoped to the URL's session",async()=>{
   const f=fakeBackend();const app=await start(f.backend);
   try {
     assert.equal((await fetch(`${app.base}/api/sessions`)).status,401);
-    const unpaired=await fetch(`${app.base}/api/sessions`,{headers:{"tailscale-user-login":login,"x-iterm-web":"1"}});
+    const unpaired=await fetch(`${app.base}/api/sessions`,{headers:{"tailscale-user-login":login,"x-afkterm":"1"}});
     assert.equal(unpaired.status,401);
     assert.equal((await unpaired.json()).pairing,true);
     assert.equal((await fetch(`${app.base}/api/sessions`,{headers:{...headers,"tailscale-user-login":"mallory@example.com"}})).status,403);
+    // Pages loaded before the rename to afkterm still send the old header.
+    assert.equal((await fetch(`${app.base}/api/sessions`,{headers:{"tailscale-user-login":login,"x-iterm-web":KEY}})).status,200);
     const ok=await fetch(`${app.base}/api/sessions`,{headers});
     assert.equal(ok.status,200);
     assert.equal(ok.headers.get("x-frame-options"),"DENY");
@@ -101,7 +103,7 @@ test("voice recordings are transcribed on the Mac, and only for paired devices",
   const app=await start(fakeBackend().backend,{available:()=>true,transcribe:async audio=>{heard.push(audio);return "fix the tests";}});
   try {
     const post=(h:Record<string,string>)=>fetch(`${app.base}/api/transcribe`,{method:"POST",headers:h,body:new Uint8Array([1,2,3])});
-    assert.equal((await post({"tailscale-user-login":login,"x-iterm-web":"wrong"})).status,401);
+    assert.equal((await post({"tailscale-user-login":login,"x-afkterm":"wrong"})).status,401);
     assert.equal(heard.length,0);
     const res=await post(headers);
     assert.deepEqual(await res.json(),{text:"fix the tests"});
@@ -120,13 +122,13 @@ test("a pairing code from the Mac gets a new device the secret, once",async()=>{
   try {
     const {code}=await (await fetch(`${app.base}/api/pair-code`,{method:"POST",headers})).json();
     assert.match(code,/^\d{6}$/);
-    const redeem=(c:string,h:Record<string,string>={"x-iterm-web":"pair"})=>fetch(`${app.base}/api/pair`,{method:"POST",headers:{"tailscale-user-login":login,"content-type":"application/json",...h},body:JSON.stringify({code:c})});
+    const redeem=(c:string,h:Record<string,string>={"x-afkterm":"pair"})=>fetch(`${app.base}/api/pair`,{method:"POST",headers:{"tailscale-user-login":login,"content-type":"application/json",...h},body:JSON.stringify({code:c})});
     assert.equal((await redeem(code,{})).status,403);                     // cross-site: no custom header
     const res=await redeem(code);
     assert.equal(res.status,200);
     assert.equal((await res.json()).key,KEY);
     assert.equal((await redeem(code)).status,403);                        // single use
-    assert.equal((await fetch(`${app.base}/api/pair-code`,{method:"POST",headers:{"tailscale-user-login":login,"x-iterm-web":"pair"}})).status,401);
+    assert.equal((await fetch(`${app.base}/api/pair-code`,{method:"POST",headers:{"tailscale-user-login":login,"x-afkterm":"pair"}})).status,401);
   } finally {await app.close();}
 });
 
@@ -171,7 +173,7 @@ test("live sessions share one loop per session, skip unchanged screens, and stop
 });
 
 test("a write to the watched transcript triggers an immediate read",async()=>{
-  const dir=await mkdtemp(join(tmpdir(),"iterm-web-watch-"));
+  const dir=await mkdtemp(join(tmpdir(),"afkterm-watch-"));
   const path=join(dir,"t.jsonl");await writeFile(path,"a\n");
   let text="a";
   const live=new LiveSessions(async()=>({text,truncated:false,claude:null}),{active:60000,idle:60000,watchPath:()=>path});
@@ -183,4 +185,18 @@ test("a write to the watched transcript triggers an immediate read",async()=>{
     for(let i=0;i<100 && got.length<2;i++)await new Promise(r=>setTimeout(r,10));
     assert.deepEqual(got,["a","b"]);
   } finally {off();await rm(dir,{recursive:true,force:true});}
+});
+
+test("moves the old ~/.iterm-web folder over once and links the old path",async()=>{
+  const { migrateLegacyHome }=await import("../server/config");
+  const { mkdtemp, mkdir, writeFile, readFile, lstat, rm }=await import("node:fs/promises");
+  const dir=await mkdtemp(join(tmpdir(),"afkterm-home-"));
+  try {
+    const legacy=join(dir,".iterm-web"),current=join(dir,".afkterm");
+    await mkdir(legacy);await writeFile(join(legacy,"config.json"),"{}");
+    assert.equal(migrateLegacyHome(legacy,current),true);
+    assert.equal(await readFile(join(current,"config.json"),"utf8"),"{}");
+    assert.equal((await lstat(legacy)).isSymbolicLink(),true);
+    assert.equal(migrateLegacyHome(legacy,current),false);
+  } finally {await rm(dir,{recursive:true,force:true});}
 });

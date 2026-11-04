@@ -10,6 +10,7 @@ import { inputSkills } from "./input-skills";
 import { uploadPath } from "./uploads";
 import { answerQuestion } from "./question";
 import { Hc, HcError } from "./hc";
+import { envVar } from "./config";
 import { inputOptionsSchema, listSchema, previewSchema, type Action, type ClaudeSend, type Key, type Session, type SessionList } from "./contract";
 
 // The same operations as ./iterm, against the Herdr desktop app. Terminals, screens
@@ -46,7 +47,7 @@ async function exists(path:string) {
 let app:Promise<string|null>|undefined;
 export function herdrApp() {
   return app??=(async()=>{
-    for(const path of [process.env.ITERM_WEB_HERDR_APP,join(homedir(),".local","bin","herdr-app"),"/Applications/Herdr.app/Contents/MacOS/Herdr",join(homedir(),"Applications","Herdr.app","Contents","MacOS","Herdr")])
+    for(const path of [envVar("HERDR_APP"),join(homedir(),".local","bin","herdr-app"),"/Applications/Herdr.app/Contents/MacOS/Herdr",join(homedir(),"Applications","Herdr.app","Contents","MacOS","Herdr")])
       if(path && await exists(path))return path;
     return null;
   })().then(path=>{if(!path)app=undefined;return path;});

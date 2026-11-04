@@ -1,11 +1,11 @@
 import { mkdir, writeFile, stat, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import type { Upload } from "./contract";
+import { CONFIG_DIR } from "./config";
 
 export const MAX_UPLOAD_BYTES=20*1024*1024;
-export const uploadRoot=()=>join(homedir(),".iterm-web","attachments");
+export const uploadRoot=()=>join(CONFIG_DIR,"attachments");
 let lastCleanup=0;
 
 export function uploadPath(sessionId:string,upload:Upload,root=uploadRoot()) {

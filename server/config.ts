@@ -1,12 +1,27 @@
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { parseLogins } from "./auth";
 
-export const CONFIG_DIR=join(homedir(),".iterm-web");
+export const CONFIG_DIR=join(homedir(),".afkterm");
 export const CONFIG_FILE=join(CONFIG_DIR,"config.json");
-export const LOG_FILE=join(homedir(),"Library","Logs","iterm-web.log");
+export const LOG_FILE=join(homedir(),"Library","Logs","afkterm.log");
+
+// afkterm was called iterm-web. Move its folder (config, device secret,
+// attachments, voice models) over once, and leave a link at the old path.
+// The CLI calls this before anything else reads the folder.
+export function migrateLegacyHome(legacy=join(homedir(),".iterm-web"),current=CONFIG_DIR) {
+  try {
+    if(existsSync(current) || !existsSync(legacy) || lstatSync(legacy).isSymbolicLink())return false;
+    renameSync(legacy,current);
+    symlinkSync(current,legacy);
+    return true;
+  } catch {return false;} // Keep going; setup writes a fresh config if it must.
+}
+
+// AFKTERM_<NAME>, or the ITERM_WEB_<NAME> it replaced.
+export const envVar=(name:string)=>process.env[`AFKTERM_${name}`] || process.env[`ITERM_WEB_${name}`] || undefined;
 
 const schema=z.object({
   allowedLogins:z.array(z.string()).default([]),
@@ -18,16 +33,16 @@ const schema=z.object({
 });
 export type Config=z.infer<typeof schema>;
 
-// ~/.iterm-web/config.json, written by `iterm-web setup`. Environment variables
-// (ITERM_WEB_ALLOWED_LOGINS, ITERM_WEB_PORT, ITERM_WEB_BACKEND) override it.
+// ~/.afkterm/config.json, written by `afkterm setup`. Environment variables
+// (AFKTERM_ALLOWED_LOGINS, AFKTERM_PORT, AFKTERM_BACKEND) override it.
 export function loadConfig():Config {
   let file:unknown={};
   try {file=JSON.parse(readFileSync(CONFIG_FILE,"utf8"));} catch { /* No config yet. */ }
   const config=schema.parse(file);
-  const logins=process.env.ITERM_WEB_ALLOWED_LOGINS;
+  const logins=envVar("ALLOWED_LOGINS");
   if(logins)config.allowedLogins=[...parseLogins(logins)];
-  if(process.env.ITERM_WEB_PORT)config.port=Number(process.env.ITERM_WEB_PORT);
-  if(process.env.ITERM_WEB_BACKEND)config.backend=process.env.ITERM_WEB_BACKEND as Config["backend"];
+  if(envVar("PORT"))config.port=Number(envVar("PORT"));
+  if(envVar("BACKEND"))config.backend=envVar("BACKEND") as Config["backend"];
   return schema.parse(config);
 }
 

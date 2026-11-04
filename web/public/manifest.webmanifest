@@ -1,6 +1,6 @@
 {
-  "name": "iTerm Web",
-  "short_name": "iTerm Web",
+  "name": "afkterm",
+  "short_name": "afkterm",
   "description": "Your iTerm2 tabs and Claude Code sessions.",
   "start_url": "/",
   "display": "standalone",

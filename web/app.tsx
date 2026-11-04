@@ -32,7 +32,7 @@ function Paired() {
   useEffect(()=>{api.me().then(me=>{setHost(me.host);if(me.app)setApp(me.app);},()=>{});},[]);
   useEffect(()=>{
     const session=sessions.data?.sessions.find(s=>s.id===sessionId);
-    document.title=session?(session.tabName || session.name):host?`iTerm Web · ${host}`:"iTerm Web";
+    document.title=session?(session.tabName || session.name):host?`afkterm · ${host}`:"afkterm";
   },[sessions.data,sessionId,host]);
 
   const open=(id:string)=>{history.pushState({fromIndex:true},"",`/s/${encodeURIComponent(id)}`);setSessionId(id);};
