@@ -30,7 +30,7 @@ const enc=encodeURIComponent;
 type SessionAction=Exclude<Action,{kind:"new-window"}> extends infer A?A extends unknown?Omit<A,"sessionId">:never:never;
 
 export const api={
-  me:()=>request<{login:string;host:string;voice?:boolean}>("/api/me"),
+  me:()=>request<{login:string;host:string;app?:string;voice?:boolean}>("/api/me"),
   sessions:()=>request<SessionList>("/api/sessions"),
   preview:(id:string)=>request<Preview>(`/api/sessions/${enc(id)}/preview`),
   skills:(id:string)=>request<InputOptions>(`/api/sessions/${enc(id)}/skills`),

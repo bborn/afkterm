@@ -22,6 +22,8 @@ export interface Backend {
   transcriptPath?(sessionId:string):string|undefined;
   onScreenUpdate?(sessionId:string,listener:()=>void):()=>void;
   hostName?():string;
+  // The terminal app's name, for the UI ("iTerm2" when left out).
+  appName?():string;
 }
 
 class HttpError extends Error { constructor(public status:number,message:string,public extra:Record<string,unknown>={}){super(message);} }
@@ -80,7 +82,7 @@ export function createApp({backend,auth,staticDir,voice=whisper}:{backend:Backen
     }
     if(!hasKey(key,auth))throw new HttpError(401,"This device isn't paired yet.",{pairing:true});
     if(path==="/api/pair-code" && method==="POST")return send(200,{code:pairing.create()});
-    if(path==="/api/me" && method==="GET")return send(200,{login,host:backend.hostName?.() ?? hostname().replace(/\.local$/,""),voice:voice.available()});
+    if(path==="/api/me" && method==="GET")return send(200,{login,host:backend.hostName?.() ?? hostname().replace(/\.local$/,""),app:backend.appName?.() ?? "iTerm2",voice:voice.available()});
     if(path==="/api/sessions" && method==="GET")return send(200,await backend.list(signal(req)));
     if(path==="/api/transcribe" && method==="POST"){
       if(!voice.available())throw new HttpError(501,"Voice input isn't set up on your Mac. Run `brew install whisper-cpp ffmpeg` and download a model.");
@@ -178,14 +180,14 @@ function staticRoot() {
   return [join(here,"web"),join(here,"..","dist","web")].find(dir=>existsSync(join(dir,"index.html"))) || join(here,"web");
 }
 
-export async function startServer({port,auth,fake=false}:{port:number;auth:AuthConfig;fake?:boolean}) {
+export async function startServer({port,auth,fake=false,terminals="iterm"}:{port:number;auth:AuthConfig;fake?:boolean;terminals?:"iterm"|"herdr"}) {
   if(!fake && !auth.key)throw new Error("No device secret configured. Run `iterm-web setup`.");
   if(!auth.allowedLogins.size && !auth.allowLocal)throw new Error("No Tailscale login is allowed. Run `iterm-web setup`, or set ITERM_WEB_ALLOWED_LOGINS.");
-  const backend:Backend=fake?(await import("./fake")).fake:await import("./iterm");
+  const backend:Backend=fake?(await import("./fake")).fake:terminals==="herdr"?await import("./herdr"):await import("./iterm");
   const {server}=createApp({backend,auth,staticDir:staticRoot()});
   // Loopback only: other devices reach iterm-web solely through Tailscale Serve.
   await new Promise<void>((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>resolve());});
-  console.log(`iterm-web listening on http://127.0.0.1:${port}${fake?" (demo data)":""}`);
+  console.log(`iterm-web listening on http://127.0.0.1:${port}${fake?" (demo data)":terminals==="herdr"?" (Herdr)":""}`);
   for(const sig of ["SIGINT","SIGTERM"] as const)process.on(sig,()=>{server.close();process.exit(0);});
   return server;
 }

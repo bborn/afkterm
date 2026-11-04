@@ -32,7 +32,7 @@ export function groupSections(sessions:Session[]):Section[] {
 }
 export const matches=(s:Session,q:string)=>!q || [s.group?.name,s.tabName,s.name,s.cwd,s.profile].join(" ").toLowerCase().includes(q);
 
-export function SessionList({host,data,error,refresh,open}:{host:string;data:List|null;error:string;refresh:()=>void;open:(id:string)=>void}) {
+export function SessionList({host,app="iTerm2",data,error,refresh,open}:{host:string;app?:string;data:List|null;error:string;refresh:()=>void;open:(id:string)=>void}) {
   const [query,setQuery]=useState("");
   const [collapsed,setCollapsed]=useStoredState<Record<string,boolean>>("collapsed-groups",{});
   const [closing,setClosing]=useState<Session|null>(null);
@@ -62,8 +62,8 @@ export function SessionList({host,data,error,refresh,open}:{host:string;data:Lis
     {(error || actionError) && <p className="banner" role="alert">{actionError || error}</p>}
     {data?.metadataError && <p className="banner banner-muted">{data.metadataError}</p>}
     <main className="list" aria-label="Tabs">
-      {!data && !error && <p className="empty">Connecting to iTerm…</p>}
-      {data && !data.running && <p className="empty">iTerm2 isn't running on this Mac.</p>}
+      {!data && !error && <p className="empty">Connecting to {app}…</p>}
+      {data && !data.running && <p className="empty">{app} isn't running on this Mac.</p>}
       {data?.running && !sessions.length && <p className="empty">{q?"No matching tabs.":"No open tabs."}</p>}
       {sections.map((section,i)=>{
         const folded=!q && (collapsed[section.key] ?? section.group?.collapsed ?? false);

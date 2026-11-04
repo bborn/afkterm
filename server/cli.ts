@@ -8,7 +8,9 @@ const HELP=`iterm-web ${VERSION}: your iTerm2 tabs and Claude Code sessions, on 
 
 Usage:
   iterm-web setup [--login <tailscale-login>] [--https-port <port>] [--port <port>]
+                  [--backend iterm|herdr]
       Check requirements, install the login agent and publish it on your tailnet.
+      --backend herdr shows your Herdr terminals instead of iTerm2's.
   iterm-web pair [--reset]
       Show a code and QR link to connect a phone. --reset signs out every
       paired device first.
@@ -22,7 +24,7 @@ Usage:
       http://127.0.0.1:<port> with no Tailscale needed.
 `;
 
-type Flags={login:string[];port?:number;httpsPort?:number;demo:boolean;reset:boolean};
+type Flags={login:string[];port?:number;httpsPort?:number;demo:boolean;reset:boolean;backend?:Config["backend"]};
 function parse(argv:string[]):{command:string;flags:Flags} {
   const flags:Flags={login:[],demo:false,reset:false};
   const [command="help",...rest]=argv;
@@ -33,6 +35,11 @@ function parse(argv:string[]):{command:string;flags:Flags} {
     else if(arg==="--port")flags.port=number(rest[++i],"--port");
     else if(arg==="--https-port")flags.httpsPort=number(rest[++i],"--https-port");
     else if(arg==="--demo")flags.demo=true;
+    else if(arg==="--backend"){
+      const value=rest[++i];
+      if(value!=="iterm" && value!=="herdr")throw new Error("--backend needs iterm or herdr.");
+      flags.backend=value;
+    }
     else if(arg==="--reset")flags.reset=true;
     else throw new Error(`Unknown option ${arg}\n\n${HELP}`);
   }
@@ -60,6 +67,7 @@ async function main() {
   const config:Config={...loadConfig()};
   if(flags.port)config.port=flags.port;
   if(flags.httpsPort)config.httpsPort=flags.httpsPort;
+  if(flags.backend)config.backend=flags.backend;
 
   if(command==="help" || command==="--help" || command==="-h"){say(HELP);return;}
   if(command==="--version" || command==="version"){say(VERSION);return;}
@@ -67,7 +75,7 @@ async function main() {
   if(command==="start"){
     const {startServer}=await import("./index");
     const logins=flags.login.length?flags.login:config.allowedLogins;
-    await startServer({port:config.port,fake:flags.demo,auth:flags.demo
+    await startServer({port:config.port,fake:flags.demo,terminals:config.backend,auth:flags.demo
       ?{allowedLogins:new Set(logins.map(l=>l.toLowerCase())),allowLocal:true}
       :{allowedLogins:new Set(logins.map(l=>l.toLowerCase())),allowLocal:false,key:config.key,hosts:allowedHosts(config)}});
     return;
@@ -101,7 +109,9 @@ async function main() {
     for(let i=0;i<20 && !ok;i++){ok=(await setup.health(config)).ok;if(!ok)await new Promise(r=>setTimeout(r,500));}
     if(!ok){say(`\n${mark(false,true)} The server didn't start. See ${LOG_FILE}`);process.exitCode=1;return;}
     const sessions=await setup.local(config,"/api/sessions").then(()=>null,(e:Error)=>e.message);
-    if(sessions)say(`\n${mark(false)} The server is running but can't read iTerm2 yet: ${sessions}\n  If macOS asked whether "node" may control iTerm2, click OK, then run: iterm-web restart`);
+    if(sessions)say(config.backend==="herdr"
+      ?`\n${mark(false)} The server is running but can't read Herdr yet: ${sessions}`
+      :`\n${mark(false)} The server is running but can't read iTerm2 yet: ${sessions}\n  If macOS asked whether "node" may control iTerm2, click OK, then run: iterm-web restart`);
     say(`\n${mark(true)} iterm-web is running at https://${config.publicHost}`);
     await pair(config);
     return;
@@ -132,6 +142,7 @@ async function main() {
       }
     }
     say(`Allowed logins:    ${config.allowedLogins.join(", ") || "(none)"}`);
+    say(`Terminals:         ${config.backend==="herdr"?"Herdr":"iTerm2"}`);
     return;
   }
 

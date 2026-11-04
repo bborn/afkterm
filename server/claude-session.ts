@@ -98,10 +98,23 @@ export async function claudeSession(tty:string,text:string,signal:AbortSignal):P
   try {process=foregroundClaude(await psForTtys([tty],signal),tty);}
   catch {return null;}
   if(!process){transcripts.delete(tty);return null;}
+  return claudeViewFor(process,text,signal,path=>transcripts.set(tty,path));
+}
+// The chat view for a known Claude process: its transcript if one can be found,
+// otherwise what the screen shows.
+export async function claudeViewFor(process:Process,text:string,signal:AbortSignal,found?:(path:string)=>void):Promise<ClaudeView> {
   const fallback:ClaudeView={source:"screen",identity:`${process.pid}:${process.started}`,messages:[],notice:"Saved Claude history is unavailable for this session. Showing terminal output.",...liveClaudeState(text)};
   try {
     const root=await claudeConfigForProcess(process,signal);
-    const view=await readClaudeTranscript(process,root,signal,path=>transcripts.set(tty,path));
+    const view=await readClaudeTranscript(process,root,signal,found);
     return view?{...view,...liveClaudeState(text)}:fallback;
   } catch {return fallback;}
+}
+// A process's start time as `ps -o lstart=` prints it in UTC (the form Claude
+// writes to its session registry), or null once it has exited.
+export async function processStarted(pid:number,signal:AbortSignal):Promise<string|null> {
+  try {
+    const {stdout}=await promisify(execFile)("/bin/ps",["-p",String(pid),"-o","lstart="],{env:{...globalThis.process.env,TZ:"UTC"},signal,timeout:2000});
+    return stdout.replace(/\s+/g," ").trim() || null;
+  } catch {return null;}
 }

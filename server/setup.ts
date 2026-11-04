@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { runAutomation } from "./bridge";
 import { ItermApi } from "./iterm-api";
+import { Hc } from "./hc";
 import { LOG_FILE, type Config } from "./config";
 
 const run=promisify(execFile);
@@ -59,9 +60,28 @@ export async function checks(config:Config):Promise<{checks:Check[];tailscale?:T
   const [major,minor]=process.versions.node.split(".").map(Number);
   add({name:"Node.js",ok:major>20 || (major===20 && minor>=12),fatal:true,detail:`v${process.versions.node}${major<20?" (needs 20.12 or newer)":""}`});
   if(process.platform!=="darwin"){
-    add({name:"macOS",ok:false,fatal:true,detail:"iterm-web drives iTerm2, which runs only on macOS."});
+    add({name:"macOS",ok:false,fatal:true,detail:"iterm-web runs only on macOS."});
     return {checks:out};
   }
+  if(config.backend==="herdr")await herdrChecks(add);
+  else await itermChecks(add);
+  return tailscaleChecks(config,out,add);
+}
+
+async function herdrChecks(add:(c:Check)=>Check) {
+  const {herdrApp}=await import("./herdr");
+  const app=await herdrApp();
+  add({name:"Herdr",ok:!!app,fatal:true,detail:app?"installed":"Install Herdr from https://herdr.dev"});
+  const hc=new Hc();
+  try {
+    const {terminals}=await hc.call<{terminals:unknown[]}>("terminal.list",{},8000);
+    add({name:"herdr-core",ok:true,detail:`running (${terminals.length} terminals)`});
+  } catch(error) {
+    add({name:"herdr-core",ok:false,detail:`${error instanceof Error?error.message:String(error)} iterm-web will show your terminals once it is running.`});
+  } finally {hc.close();}
+}
+
+async function itermChecks(add:(c:Check)=>Check) {
   const iterm=["/Applications/iTerm.app",join(homedir(),"Applications/iTerm.app")].some(existsSync);
   add({name:"iTerm2",ok:iterm,fatal:true,detail:iterm?"installed":"Install iTerm2 from https://iterm2.com"});
   if(iterm){
@@ -79,6 +99,9 @@ export async function checks(config:Config):Promise<{checks:Check[];tailscale?:T
       add({name:"iTerm2 Python API",ok:false,detail:"off. iterm-web still works, but slower. Turn it on in iTerm2 → Settings → General → Magic → Enable Python API."});
     } finally {api.close();}
   }
+}
+
+async function tailscaleChecks(config:Config,out:Check[],add:(c:Check)=>Check):Promise<{checks:Check[];tailscale?:TailscaleState;bin?:string}> {
   const bin=await tailscaleBinary();
   if(!bin){add({name:"Tailscale",ok:false,fatal:true,detail:"Install Tailscale from https://tailscale.com/download/mac and sign in."});return {checks:out};}
   let tailscale:TailscaleState|undefined;

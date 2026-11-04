@@ -14,11 +14,12 @@ const schema=z.object({
   httpsPort:z.number().int().min(1).max(65535).default(9443),
   key:z.string().optional(),          // device secret, shared with paired phones
   publicHost:z.string().optional(),   // <machine>.<tailnet>.ts.net:<httpsPort>
+  backend:z.enum(["iterm","herdr"]).default("iterm"),  // which terminal app to drive
 });
 export type Config=z.infer<typeof schema>;
 
 // ~/.iterm-web/config.json, written by `iterm-web setup`. Environment variables
-// (ITERM_WEB_ALLOWED_LOGINS, ITERM_WEB_PORT) override it.
+// (ITERM_WEB_ALLOWED_LOGINS, ITERM_WEB_PORT, ITERM_WEB_BACKEND) override it.
 export function loadConfig():Config {
   let file:unknown={};
   try {file=JSON.parse(readFileSync(CONFIG_FILE,"utf8"));} catch { /* No config yet. */ }
@@ -26,6 +27,7 @@ export function loadConfig():Config {
   const logins=process.env.ITERM_WEB_ALLOWED_LOGINS;
   if(logins)config.allowedLogins=[...parseLogins(logins)];
   if(process.env.ITERM_WEB_PORT)config.port=Number(process.env.ITERM_WEB_PORT);
+  if(process.env.ITERM_WEB_BACKEND)config.backend=process.env.ITERM_WEB_BACKEND as Config["backend"];
   return schema.parse(config);
 }
 

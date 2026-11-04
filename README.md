@@ -99,9 +99,19 @@ phone ──HTTPS (tailnet)──► tailscale serve ──► iterm-web (127.0.
 - **Prompts and the "working" state** are recognized from the screen: Claude's numbered menus and its "esc to interrupt" status line.
 - **Sending a message** types it into the terminal as a single bracketed paste followed by Enter, exactly as if you'd pasted it.
 
+### Herdr
+
+iterm-web can show your [Herdr](https://herdr.dev) terminals instead of iTerm2's:
+
+```sh
+iterm-web setup --backend herdr     # or set "backend": "herdr" in ~/.iterm-web/config.json
+```
+
+Each Herdr space is a group on the phone, each tab is a tab, and split panes are listed under their tab. Screens, keys and typing go through herdr-core's socket (`~/.local/state/herdr-core/default/default.sock`, or set `ITERM_WEB_HC_SOCKET`). Renaming, closing, splitting and new tabs go through `herdr-app do`, so those need the Herdr app open. Your terminals are still listed while it's closed. Claude sessions on this Mac get the same chat view from their transcripts. A Claude session on a remote machine shows its screen, and attachments are copied to that machine before Claude reads them.
+
 ## Limitations
 
-- **macOS and iTerm2 only.** Other terminals have no comparable automation interface.
+- **macOS, with iTerm2 or Herdr.** Other terminals have no comparable automation interface.
 - **The terminal view is text, not an emulator.** You see the screen and recent scrollback without colors, and full-screen apps like `vim` or `htop` are view-only in practice.
 - **Prompt buttons and the working indicator read Claude Code's screen.** A Claude Code update that changes those screens can break them until iterm-web catches up. The chat itself comes from the transcript and is more stable. Please [open an issue](https://github.com/bborn/iterm-web/issues) when something looks off.
 - **Voice input** is your phone keyboard's dictation button.
