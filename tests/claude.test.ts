@@ -89,3 +89,23 @@ test("notices select menus that need arrow keys",async()=>{
   assert.equal(claudeMenu("Enter to select · Tab/Arrow keys to navigate · Esc to cancel"),true);
   assert.equal(claudeMenu("> \n  ? for shortcuts"),false);
 });
+
+test("shows Claude Code's tagged events as tool lines and commands, not raw tags",()=>{
+  const line=(uuid:string,parent:string|null,content:string)=>JSON.stringify({type:"user",uuid,parentUuid:parent,sessionId:"s",message:{role:"user",content}});
+  const notice=`<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n<summary>Agent "Pion watch tick" finished</summary>\n<note>boilerplate</note>\n<result>Nothing new.</result>\n</task-notification>`;
+  const failed=`<task-notification>\n<task-id>b2</task-id>\n<status>failed</status>\n<summary>Background command "npm test" failed with exit code 1</summary>\n</task-notification>`;
+  const messages=transcriptMessages([
+    line("1",null,notice+"\n"+failed),
+    line("2","1","<command-message>pr-walk</command-message>\n<command-name>/pr-walk</command-name>\n<command-args>PR 12</command-args>"),
+    line("3","2","<local-command-stdout>(no content)</local-command-stdout>"),
+    line("4","3","<bash-input>ls</bash-input>"),
+    line("5","4","<bash-stdout>a\nb</bash-stdout><bash-stderr></bash-stderr>"),
+  ].join("\n"),"s");
+  assert.deepEqual(messages.map(m=>[m.role,m.name,m.text,m.status,m.result]),[
+    ["tool","Agent","Pion watch tick finished","completed","Nothing new."],
+    ["tool","Command","npm test failed with exit code 1","error",undefined],
+    ["user",undefined,"/pr-walk PR 12",undefined,undefined],
+    ["user",undefined,"! ls",undefined,undefined],
+    ["tool","Output","a","completed","a\nb"],
+  ]);
+});

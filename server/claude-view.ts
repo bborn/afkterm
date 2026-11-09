@@ -5,6 +5,47 @@ const object = (v: unknown): Record<string,any> | null => v && typeof v === "obj
 const plain = (v: unknown): string => typeof v === "string" ? v : Array.isArray(v) ? v.map(b=>object(b)?.type==="text" ? object(b)?.text || "" : "").join("\n") : "";
 const bounded = (text:string) => text.length>MAX_TEXT ? text.slice(0,MAX_TEXT)+"\n… (truncated)" : text;
 
+// Claude Code writes some events into the conversation as tagged text: background
+// task notices, slash commands, and `!` shell commands with their output.
+// Turn them into a line each instead of showing the tags.
+const tag=(text:string,name:string)=>{const m=new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text);return m?m[1].trim():"";};
+export function taggedMessages(text:string,id:string):ChatMessage[]|null {
+  const t=text.trim();
+  if(t.startsWith("<task-notification>")){
+    const out:ChatMessage[]=[];
+    const notices=[...t.matchAll(/<task-notification>([\s\S]*?)<\/task-notification>/g)];
+    for(const [i,[,body]] of notices.entries()){
+      const status=tag(body,"status");
+      const summary=tag(body,"summary") || "Background task";
+      const detail=tag(body,"result") || tag(body,"event");
+      // 'Agent "Pion watch tick" finished' reads as Agent · Pion watch tick finished.
+      const m=/^(Agent|Monitor event:|Monitor|Background command)\s+"([\s\S]*?)"\s*([\s\S]*)$/.exec(summary);
+      const name=!m?"Task":m[1]==="Agent"?"Agent":m[1]==="Background command"?"Command":"Monitor";
+      out.push({id:`${id}:task:${i}`,role:"tool",name,text:m?[m[2],m[3]].filter(Boolean).join(" "):summary,
+        status:!status || status==="completed"?"completed":"error",...(detail?{result:bounded(detail)}:{})});
+    }
+    const rest=t.replace(/<task-notification>[\s\S]*?<\/task-notification>/g,"").trim();
+    if(rest)out.push({id:`${id}:rest`,role:"user",text:bounded(rest)});
+    return out;
+  }
+  if(/^<(command-name|command-message|command-args)>/.test(t)){
+    const name=tag(t,"command-name") || `/${tag(t,"command-message")}`;
+    return [{id,role:"user",text:bounded([name,tag(t,"command-args")].filter(Boolean).join(" "))}];
+  }
+  if(t.startsWith("<bash-input>"))return [{id,role:"user",text:bounded(`! ${tag(t,"bash-input")}`)}];
+  if(t.startsWith("<bash-stdout>") || t.startsWith("<bash-stderr>")){
+    const output=[tag(t,"bash-stdout"),tag(t,"bash-stderr")].filter(Boolean).join("\n");
+    return output && output!=="(Bash completed with no output)"?[{id,role:"tool",name:"Output",text:short(output),status:tag(t,"bash-stderr")?"error":"completed",result:bounded(output)}]:[];
+  }
+  if(t.startsWith("<local-command-stdout>")){
+    const output=tag(t,"local-command-stdout");
+    return output && output!=="(no content)"?[{id,role:"tool",name:"Output",text:short(output),status:"completed",result:bounded(output)}]:[];
+  }
+  if(t.startsWith("<local-command-caveat>"))return [];
+  return null;
+}
+const short=(text:string)=>text.split("\n").find(l=>l.trim())?.trim().slice(0,200) || "";
+
 export function transcriptMessages(text:string, sessionId:string):ChatMessage[] {
   const records:Record<string,any>[]=[];
   for(const line of text.split("\n")) {
@@ -23,7 +64,11 @@ export function transcriptMessages(text:string, sessionId:string):ChatMessage[] 
     const blocks=typeof m.content==="string"?[{type:"text",text:m.content}]:Array.isArray(m.content)?m.content:[];
     for(const [i,raw] of blocks.entries()) {
       const b=object(raw);if(!b)continue;
-      if(b.type==="text" && typeof b.text==="string" && b.text.trim())messages.push({id:`${r.uuid}:${i}`,role:r.type,text:bounded(b.text)});
+      if(b.type==="text" && typeof b.text==="string" && b.text.trim()){
+        const tagged=r.type==="user"?taggedMessages(b.text,`${r.uuid}:${i}`):null;
+        if(tagged)messages.push(...tagged);
+        else messages.push({id:`${r.uuid}:${i}`,role:r.type,text:bounded(b.text)});
+      }
       if(b.type==="tool_use" && typeof b.name==="string" && typeof b.id==="string") {
         const row:ChatMessage={id:b.id,role:"tool",text:bounded(JSON.stringify(b.input ?? {},null,2)),name:b.name.slice(0,100),status:"pending"};tools.set(b.id,row);messages.push(row);
       }

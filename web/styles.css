@@ -110,7 +110,11 @@ button:disabled { opacity: .45; cursor: default; }
 .working { display: flex; align-items: center; gap: 10px; padding: 8px 14px; font-size: 13.5px; color: var(--accent); }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(217,119,87,.3); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 .stop { margin-left: auto; padding: 6px 14px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 13px; font-weight: 600; min-height: 32px; }
-.prompt { margin: 8px 10px 4px; border: 1px solid #5a4520; background: #1d170c; border-radius: 14px; padding: 10px; }
+.prompt { position: relative; margin: 14px 10px 4px; border: 1px solid #5a4520; background: #1d170c; border-radius: 14px; padding: 10px; }
+.prompt-fold { position: absolute; top: -11px; left: 50%; transform: translateX(-50%); z-index: 1; width: 44px; height: 22px; border-radius: 999px; border: 1px solid #5a4520; background: #1d170c; color: var(--muted); display: grid; place-items: center; }
+.prompt-folded { display: flex; align-items: center; gap: 10px; width: calc(100% - 20px); text-align: left; padding: 10px 12px; min-height: 44px; }
+.prompt-folded-text { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prompt-folded-show { flex-shrink: 0; font-size: 13px; color: var(--accent); }
 .prompt-head { display: flex; gap: 10px; align-items: flex-start; padding: 2px 2px 8px; }
 .prompt-question { flex: 1; min-width: 0; margin: 0; font-weight: 600; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .prompt-toggle { color: var(--muted); font-size: 12px; flex-shrink: 0; padding: 2px 0 6px 6px; }

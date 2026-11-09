@@ -2,6 +2,7 @@ import { memo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage, ClaudeView, Prompt } from "./api";
+import { Folded, FoldButton } from "./question";
 
 const short=(s:string,n=80)=>s.length>n?s.slice(0,n-1)+"…":s;
 const base=(p:string)=>p.split("/").filter(Boolean).at(-1) || p;
@@ -78,7 +79,10 @@ export function Chat({view,pending=[]}:{view:ClaudeView;pending?:string[]}) {
 // Pressing the option's number in Claude selects it.
 export function PromptCard({prompt,disabled,choose}:{prompt:Prompt;disabled:boolean;choose:(key:string)=>void}) {
   const [details,setDetails]=useState(false);
+  const [folded,setFolded]=useState(false);
+  if(folded)return <Folded text={prompt.question || "Claude is asking"} unfold={()=>setFolded(false)} />;
   return <div className="prompt" role="group" aria-label="Claude is asking">
+    <FoldButton fold={()=>setFolded(true)} />
     <div className="prompt-head">
       <p className="prompt-question">{prompt.question || "Claude is asking"}</p>
       <button type="button" className="prompt-toggle" onClick={()=>setDetails(!details)}>{details?"Hide":"Details"}</button>

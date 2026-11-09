@@ -9,6 +9,9 @@ export function QuestionCard({question:q,disabled,answer}:{question:Question;dis
   const [otherOpen,setOtherOpen]=useState(!!q.other?.text);
   const [notes,setNotes]=useState(q.notes?.text ?? "");
   const body=useRef<HTMLDivElement>(null);
+  // Folded down to one line so the conversation above has room. A new question opens unfolded.
+  const [folded,setFolded]=useState(false);
+  useEffect(()=>{setFolded(false);},[q.prompt]);
   // A new question starts at its top, not wherever the last one was scrolled to.
   useLayoutEffect(()=>{body.current?.scrollTo({top:0});},[q.prompt]);
   // The screen is the source of truth: pick up what the terminal shows when the question or row changes.
@@ -21,7 +24,9 @@ export function QuestionCard({question:q,disabled,answer}:{question:Question;dis
   const preview=q.preview!==undefined;
   const send=(a:QuestionAnswer)=>void answer(a);
 
+  if(folded)return <Folded text={q.prompt} unfold={()=>setFolded(false)} />;
   return <div className="prompt question" role="group" aria-label="Claude is asking">
+    <FoldButton fold={()=>setFolded(true)} />
     {tabs && <div className="question-tabs" role="tablist">
       {q.tabs.map((t,i)=><span key={i} className="question-tab" data-answered={t.answered}>{t.answered?"✓ ":""}{t.label}</span>)}
       {q.submitTab && <span className="question-tab" data-current={!!q.review}>Submit</span>}
@@ -80,4 +85,17 @@ export function QuestionCard({question:q,disabled,answer}:{question:Question;dis
       <button type="button" className="question-link question-cancel" disabled={disabled} onClick={()=>send({op:"cancel"})}>Cancel</button>
     </div>
   </div>;
+}
+
+// The folded card: the question on one line. Tap anywhere on it to bring the answers back.
+export function Folded({text,unfold}:{text:string;unfold:()=>void}) {
+  return <button type="button" className="prompt prompt-folded" aria-label="Show Claude's question" onClick={unfold}>
+    <span className="prompt-folded-text">{text}</span>
+    <span className="prompt-folded-show">Show</span>
+  </button>;
+}
+export function FoldButton({fold}:{fold:()=>void}) {
+  return <button type="button" className="prompt-fold" aria-label="Hide Claude's question to read the conversation" onClick={fold}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+  </button>;
 }
