@@ -245,3 +245,9 @@ button:disabled { opacity: .45; cursor: default; }
 .drawer-row:active { background: var(--surface); }
 .drawer-row[data-current="true"] { background: var(--surface-2); box-shadow: inset 3px 0 var(--accent); }
 @media (prefers-reduced-motion: reduce) { .drawer, .drawer-backdrop { transition: none; } }
+
+.replies { display: flex; gap: 6px; overflow-x: auto; padding: 6px 10px 2px; scrollbar-width: none; }
+.replies::-webkit-scrollbar { display: none; }
+.reply { flex-shrink: 0; max-width: 80vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 7px 13px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); font-size: 14px; }
+.reply:active { background: #4a3c20; }
+.reply:disabled { opacity: .45; }

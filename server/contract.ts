@@ -72,6 +72,8 @@ export const claudeViewSchema = z.object({
   mode:z.string().optional(),
   // A select menu is on screen that couldn't be turned into buttons (needs arrows + Enter).
   menu:z.boolean().default(false),
+  // Short answers to offer as chips when Claude's last message asks you something.
+  replies:z.array(z.string()).optional(),
 });
 export type ClaudeView = z.infer<typeof claudeViewSchema>;
 export const previewSchema = z.object({text:z.string(),truncated:z.boolean(),claude:claudeViewSchema.nullable().default(null)});

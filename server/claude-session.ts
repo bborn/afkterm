@@ -7,6 +7,7 @@ import type { ClaudeView } from "./contract";
 import { processClaudeConfigDir } from "./claude-config";
 import { transcriptMessages, liveClaudePrompt, claudeWorking, claudeMode, claudeMenu } from "./claude-view";
 import { claudeQuestion } from "./question";
+import { quickReplies } from "./replies";
 
 // What the screen says Claude is waiting on. An AskUserQuestion dialog gets its own
 // card, so it isn't also offered as a numbered prompt or an arrow-key menu.
@@ -107,7 +108,11 @@ export async function claudeViewFor(process:Process,text:string,signal:AbortSign
   try {
     const root=await claudeConfigForProcess(process,signal);
     const view=await readClaudeTranscript(process,root,signal,found);
-    return view?{...view,...liveClaudeState(text)}:fallback;
+    if(!view)return fallback;
+    const live=liveClaudeState(text);
+    // Offer replies only while Claude is idle at its prompt, not mid-turn or in a dialog.
+    const idle=!live.working && !live.prompt && !live.question && !live.menu;
+    return {...view,...live,...(idle?{replies:quickReplies(view.messages)}:{})};
   } catch {return fallback;}
 }
 // A process's start time as `ps -o lstart=` prints it in UTC (the form Claude

@@ -52,6 +52,14 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
     if(left.length!==pending.length)setPending(left);
   },[claude?.messages,pending]);
   const question=claude?.question;
+  const sendClaude=async(text:string,files:Upload[])=>{
+    const item={id:crypto.randomUUID(),text:[text,...files.map(f=>`📎 ${f.name}`)].filter(Boolean).join("\n"),match:text.trim() || "Attached file:",at:Date.now()};
+    atBottom.current=true;setPending(p=>[...p,item]);
+    try {await api.sendClaude(sessionId,{text,files});}
+    catch(e){setPending(p=>p.filter(x=>x.id!==item.id));throw e;}
+  };
+  // Hidden once you've sent something, until Claude's next turn.
+  const replies=claude?.replies?.length && !pending.length && !claude.working?claude.replies:undefined;
   const working=!!claude?.working && !prompt && !question;
 
   // Follow new output while the reader is at the bottom; otherwise offer a jump.
@@ -150,13 +158,12 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
       {claudeKeys
         ?<ChatKeys mode={claude?.mode} menu={!!claude?.menu && !prompt && !question} busy={busy} expanded={chatKeysExpanded} setExpanded={setChatKeysExpanded} send={key} />
         :showKeys && <TerminalKeys busy={busy} send={key} />}
+      {chat && replies && <div className="replies" role="group" aria-label="Quick replies">
+        {replies.map(r=><button key={r} type="button" className="reply" disabled={busy || gone}
+          onClick={()=>void sendClaude(r,[]).catch(e=>setActionError(errorMessage(e)))}>{r}</button>)}
+      </div>}
       <Composer sessionId={sessionId} mode={chat || (claude && mode==="chat")?"claude":"terminal"} disabled={gone}
-        sendClaude={async(text:string,files:Upload[])=>{
-          const item={id:crypto.randomUUID(),text:[text,...files.map(f=>`📎 ${f.name}`)].filter(Boolean).join("\n"),match:text.trim() || "Attached file:",at:Date.now()};
-          atBottom.current=true;setPending(p=>[...p,item]);
-          try {await api.sendClaude(sessionId,{text,files});}
-          catch(e){setPending(p=>p.filter(x=>x.id!==item.id));throw e;}
-        }}
+        sendClaude={sendClaude}
         sendText={async text=>{await api.action(sessionId,{kind:"send",text,enter:true});atBottom.current=true;}} />
     </div>
     <TabDrawer sessions={sessions} currentId={sessionId} open={drawerOpen} offset={drawerX} width={drawerWidth}
