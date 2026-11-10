@@ -12,6 +12,9 @@ interface Options {
   // A push source of change events (iTerm screen updates). Returns an unsubscribe.
   onChange?:(sessionId:string,changed:()=>void)=>()=>void;
   minGap?:number;   // never read more often than this, however many change events arrive
+  // A cheaper read for the first message, when a full one can take seconds
+  // (herdr-core scrolls Claude's screen to read its history). A full read follows at once.
+  quick?:Reader;
 }
 interface Watch {
   clients:Set<Client>; last?:string; lastKey?:string; timer?:ReturnType<typeof setTimeout>;
@@ -83,8 +86,9 @@ export class LiveSessions {
     if(!watch)return;
     watch.running=true;watch.timer=undefined;
     let message:LiveMessage;
+    const quick=!watch.readAt?this.options.quick:undefined;
     try {
-      const preview=await this.read(sessionId,AbortSignal.any([watch.controller.signal,AbortSignal.timeout(15000)]));
+      const preview=await (quick ?? this.read)(sessionId,AbortSignal.any([watch.controller.signal,AbortSignal.timeout(15000)]));
       watch.working=!!preview.claude?.working;
       message={type:"preview",preview,at:Date.now()};
     } catch(error) {
@@ -92,6 +96,8 @@ export class LiveSessions {
     }
     watch.running=false;watch.readAt=Date.now();
     if(this.watches.get(sessionId)!==watch)return;
+    // A failed quick read isn't worth showing; the full read comes next either way.
+    if(quick && message.type==="error"){this.schedule(sessionId,watch,0);return;}
     // Compare without the timestamp so unchanged screens are not re-sent.
     const {at:_,...body}=message;
     const key=JSON.stringify(body);
@@ -102,7 +108,7 @@ export class LiveSessions {
     }
     this.followFile(sessionId,watch);
     const busy=watch.working || Date.now()-watch.changedAt<this.quietAfter;
-    const delay=watch.again?this.minGap:busy?this.active:this.idle;
+    const delay=quick?0:watch.again?this.minGap:busy?this.active:this.idle;
     watch.again=false;
     this.schedule(sessionId,watch,delay);
   }

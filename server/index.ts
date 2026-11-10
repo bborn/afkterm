@@ -16,6 +16,8 @@ import { MAX_AUDIO_BYTES, whisper, type Transcriber } from "./voice";
 export interface Backend {
   list(signal:AbortSignal):Promise<SessionList>;
   preview(sessionId:string,signal:AbortSignal):Promise<Preview>;
+  // The visible screen without history, when a full preview can be slow to read.
+  quickPreview?(sessionId:string,signal:AbortSignal):Promise<Preview>;
   inputOptions(sessionId:string,signal:AbortSignal):Promise<InputOptions>;
   action(action:Action,signal:AbortSignal):Promise<{sessionId:string|null}>;
   sendClaude(sessionId:string,input:ClaudeSend,signal:AbortSignal):Promise<{sessionId:string|null}>;
@@ -58,7 +60,7 @@ const json=async<T>(req:IncomingMessage,schema:z.ZodType<T>)=>{
 };
 
 export function createApp({backend,auth,staticDir,voice=whisper}:{backend:Backend;auth:AuthConfig;staticDir:string;voice?:Transcriber}) {
-  const live=new LiveSessions((id,signal)=>backend.preview(id,signal),{watchPath:id=>backend.transcriptPath?.(id),onChange:backend.onScreenUpdate?(id,changed)=>backend.onScreenUpdate!(id,changed):undefined});
+  const live=new LiveSessions((id,signal)=>backend.preview(id,signal),{quick:backend.quickPreview?(id,signal)=>backend.quickPreview!(id,signal):undefined,watchPath:id=>backend.transcriptPath?.(id),onChange:backend.onScreenUpdate?(id,changed)=>backend.onScreenUpdate!(id,changed):undefined});
   const lifecycle=new AbortController();
   const signal=(req:IncomingMessage)=>{
     const controller=new AbortController();

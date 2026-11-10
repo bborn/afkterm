@@ -172,6 +172,30 @@ test("live sessions share one loop per session, skip unchanged screens, and stop
   assert.ok(reads-before<=1);
 });
 
+test("a pane's first message comes from the quick read, then the full one follows at once",async()=>{
+  const reads:string[]=[];
+  const live=new LiveSessions(async()=>{reads.push("full");return {text:"history\nscreen",truncated:false,claude:null};},
+    {active:60000,idle:60000,quick:async()=>{reads.push("quick");return {text:"screen",truncated:false,claude:null};}});
+  const got:string[]=[];
+  const off=live.subscribe("s",{send:m=>got.push(JSON.parse(m).preview.text)});
+  for(let i=0;i<50 && got.length<2;i++)await new Promise(r=>setTimeout(r,10));
+  off();
+  assert.deepEqual(got,["screen","history\nscreen"]);
+  assert.deepEqual(reads,["quick","full"]);
+});
+
+test("a failed quick read isn't shown; the full read follows",async()=>{
+  const live=new LiveSessions(async()=>({text:"full",truncated:false,claude:null}),
+    {active:60000,idle:60000,quick:async()=>{throw Error("slow");}});
+  const got:string[]=[];
+  const off=live.subscribe("s",{send:m=>got.push(m)});
+  for(let i=0;i<50 && !got.length;i++)await new Promise(r=>setTimeout(r,10));
+  await new Promise(r=>setTimeout(r,30));
+  off();
+  assert.deepEqual(got.map(m=>JSON.parse(m).type),["preview"]);
+  assert.equal(JSON.parse(got[0]).preview.text,"full");
+});
+
 test("a write to the watched transcript triggers an immediate read",async()=>{
   const dir=await mkdtemp(join(tmpdir(),"afkterm-watch-"));
   const path=join(dir,"t.jsonl");await writeFile(path,"a\n");

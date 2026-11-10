@@ -17,6 +17,9 @@ import { inputOptionsSchema, listSchema, previewSchema, type Action, type Claude
 // and typing go through herdr-core's socket; spaces, tabs and panes come from the
 // app (`herdr-app ls` and `herdr-app do`), since herdr-core only knows terminals.
 const hc=new Hc();
+// herdr-core answers one call at a time per connection, so slow history reads get
+// their own: otherwise they hold up a newly opened pane, the list and typing.
+const history=new Hc();
 const SCREEN_LINES=600;
 const SHELLS=new Set(["zsh","bash","fish","sh","tcsh","csh","ksh","nu","login","-zsh","-bash","-fish"]);
 // herdr-core's key names (see `hc schema`, terminal.keys).
@@ -163,8 +166,10 @@ async function facts(terminal:string):Promise<Terminal> {
     throw error;
   }
 }
-async function screen(terminal:string) {
-  return str((await hc.call<{text:string}>("terminal.read",{terminal,lines:SCREEN_LINES})).text);
+// History of a full-screen app (Claude) is read by scrolling it, which takes
+// seconds whenever its screen changed; lines:0 is the screen alone, in ~1ms.
+async function screen(terminal:string,lines=SCREEN_LINES) {
+  return str((await (lines?history:hc).call<{text:string}>("terminal.read",{terminal,lines})).text);
 }
 
 // Claude's chat view, from its saved transcript when it runs on this Mac.
@@ -176,11 +181,13 @@ async function claudeView(t:Terminal,text:string,signal:AbortSignal) {
   return claudeViewFor({pid,tty:"",foreground:pid,group:pid,started,command:"claude"},text,signal,path=>transcripts.set(t.address,path));
 }
 
-export async function preview(sessionId:string,signal:AbortSignal) {
-  const [t,raw]=await Promise.all([facts(sessionId),screen(sessionId)]);
+export async function preview(sessionId:string,signal:AbortSignal,lines=SCREEN_LINES) {
+  const [t,raw]=await Promise.all([facts(sessionId),screen(sessionId,lines)]);
   const text=screenText(raw.slice(-64000));
   return previewSchema.parse({text,truncated:raw.length>64000,claude:await claudeView(t,text,signal)});
 }
+// The first paint of a pane: everything but the terminal's history.
+export const quickPreview=(sessionId:string,signal:AbortSignal)=>preview(sessionId,signal,0);
 export const transcriptPath=(sessionId:string)=>transcripts.get(sessionId);
 
 // herdr-core reports fact changes (title, status, turn); screen output itself
@@ -210,7 +217,8 @@ async function question(input:Extract<Action,{kind:"question"}>,signal:AbortSign
   const id=input.sessionId;
   const previous=answering.get(id) ?? Promise.resolve();
   const run=previous.catch(()=>{}).then(()=>answerQuestion({
-    read:async()=>{signal.throwIfAborted();return screenText(await screen(id));},
+    // The dialog is on screen, and each step changes it: skip the slow history read.
+    read:async()=>{signal.throwIfAborted();return screenText(await screen(id,0));},
     type:text=>hc.type(id,text),
   },input.prompt,input.answer));
   answering.set(id,run);
