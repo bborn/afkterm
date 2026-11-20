@@ -30,8 +30,21 @@ const COLORS=["#5e9ce6","#d9734a","#4caf7a","#b07cd8","#d6a73c","#d65c8a","#4bb3
 interface Terminal {
   address:string;state:string;cols:number;rows:number;cwd:string|null;title:string;name:string|null;
   foreground:{pid:number;name:string;argv:string[];cwd:string|null}|null;
-  status:{app?:string;state?:string}|null;labels:Record<string,string>;
+  status:{app?:string;state?:string;kind?:string;msg?:string}|null;labels:Record<string,string>;turn?:number;
 }
+
+// Herdr's shared rule (docs/labels.md in herdr-app): blocked or error needs you; a
+// finished agent is done while its turn is past the last one anyone looked at.
+export function attention(t:Pick<Terminal,"status"|"labels"|"turn">):"blocked"|"done"|null {
+  const state=t.status?.state;
+  if(state==="blocked" || state==="error")return "blocked";
+  if(!state || state==="working")return null;
+  const seen=t.labels?.["herdr.seen"];
+  // No label means no client has shared what it saw, so there's nothing to go on.
+  if(!seen || !/^\d+$/.test(seen))return null;
+  return (t.turn ?? 0)>Number(seen)?"done":null;
+}
+const askOf=(t:Pick<Terminal,"status">)=>attention(t as Terminal)==="blocked"?str(t.status?.msg).replace(/^answer:\s*/i,"").replace(/\s+/g," ").trim().slice(0,300):"";
 interface AppTerminal {terminal:string;pane:string;status:string|null;app:string|null;name:string|null}
 interface AppTab {id:string;name:string;active:boolean;terminals:AppTerminal[]}
 interface AppSpace {id:string;name:string;folder:string|null;machine:string|null;active:boolean;tabs:AppTab[]}
@@ -102,6 +115,7 @@ export function sessionsFrom(terminals:Terminal[],spaces:AppSpace[]|null):Sessio
       profile:t.status?.app || t.foreground?.name || "",cwd:t.foreground?.cwd || t.cwd || "",
       processing:t.status?.state==="working" || (!shell && !claude),atPrompt:shell && !claude,claude,
       windowId:1,windowName:"Herdr",
+      attention:attention(t),ask:askOf(t),turn:t.turn ?? null,
     };
   };
   if(spaces){
@@ -204,6 +218,14 @@ export async function inputOptions(sessionId:string,signal:AbortSignal) {
   return inputOptionsSchema.parse(await inputSkills(cwd,signal));
 }
 
+// Panes on other machines have their files there; the phone can't open those here.
+export async function localCwd(sessionId:string) {
+  if(isRemote(sessionId))return null;
+  const t=await facts(sessionId);
+  const cwd=t.foreground?.cwd || t.cwd || "";
+  return cwd.startsWith("/")?cwd:"";
+}
+
 // The app's tab and pane for a terminal: from the last listing, or a fresh one.
 async function place(sessionId:string,signal:AbortSignal):Promise<Place> {
   let found=places.get(sessionId);
@@ -271,6 +293,31 @@ export async function action(input:Action,signal:AbortSignal):Promise<{sessionId
   }
   case "new-window":
     return {sessionId:terminalOf(await appCommand("space.new",{},signal))};
+  case "seen":{
+    const t=await facts(input.sessionId);
+    const seen=Number(t.labels?.["herdr.seen"] ?? -1);
+    // Only ever raised; a lower value is how another client marks it unread.
+    if(t.turn!==undefined && (!t.labels?.["herdr.seen"] || seen<t.turn))
+      await hc.call("terminal.label",{terminal:input.sessionId,labels:{"herdr.seen":String(t.turn)}});
+    return {sessionId:input.sessionId};
+  }
+  case "move-tab":{
+    const {space,tab}=await place(input.sessionId,signal);
+    const tabs=(await appLayout(signal))?.find(s=>s.id===space)?.tabs.map(t=>t.id);
+    if(!tabs)throw Error("Open Herdr on this Mac to manage its tabs.");
+    // Herdr's index is the tab's place once it's taken out, counting from 1.
+    const rest=tabs.filter(id=>id!==tab);
+    let at=rest.length;
+    if(input.before){
+      const target=await place(input.before,signal);
+      if(target.space!==space)throw Error("You can only move a tab within its space.");
+      if(target.tab===tab)return {sessionId:input.sessionId};
+      at=rest.indexOf(target.tab);
+      if(at<0)throw Error("That tab has closed. Try again.");
+    }
+    await appCommand("tab.move",{id:tab,index:at+1},signal);
+    return {sessionId:input.sessionId};
+  }
   }
 }
 
@@ -295,3 +342,4 @@ export async function sendClaude(sessionId:string,input:ClaudeSend,signal:AbortS
 
 export const hostName=()=>hostname().replace(/\.local$/,"");
 export const appName=()=>"Herdr";
+export const canMoveTabs=()=>true;

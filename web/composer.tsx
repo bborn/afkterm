@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, errorMessage, type InputSkill, type Upload } from "./api";
 import { CloseIcon, EditIcon, MicIcon, PlusIcon, SendIcon } from "./icons";
 import { useVoice, useVoiceAvailable } from "./voice";
+import { pressEnd, slideCancels, type Press } from "./push-to-talk";
 
 type Attachment = { id:string; name:string; upload?:Upload; error?:string };
 const finePointer=()=>window.matchMedia("(pointer: fine)").matches;
@@ -24,6 +25,14 @@ export function Composer({sessionId,mode,disabled,sendClaude,sendText}:{
   const voiceAvailable=useVoiceAvailable();
   const voice=useVoice(setError);
 
+  const [cleared,setCleared]=useState<string|null>(null);
+  const [multiline,setMultiline]=useState(false);
+  useEffect(()=>{if(cleared===null)return;const t=setTimeout(()=>setCleared(null),5000);return ()=>clearTimeout(t);},[cleared]);
+  // More than one line, typed or wrapped.
+  useEffect(()=>{
+    const el=input.current;if(!el){setMultiline(false);return;}
+    setMultiline(text.includes("\n") || el.scrollHeight>parseFloat(getComputedStyle(el).lineHeight)*1.6+18);
+  },[text]);
   useEffect(()=>{try{text?localStorage.setItem(draftKey,text):localStorage.removeItem(draftKey);}catch{}},[text,draftKey]);
   useLayoutEffect(()=>{
     const el=input.current;if(!el)return;
@@ -71,7 +80,8 @@ export function Composer({sessionId,mode,disabled,sendClaude,sendText}:{
     finally{setSending(false);}
   }
 
-  // Voice: the mic shows while the box is empty. Stop to send what you said, or to edit it first.
+  // Voice: the mic shows while the box is empty. Hold it to talk and let go to send,
+  // like Claude's push-to-talk; tap it to record hands-off, then stop to send or to edit.
   const showMic=mode==="claude" && voiceAvailable && !text && !files.length;
   async function finishVoice(edit:boolean) {
     setError("");
@@ -81,50 +91,101 @@ export function Composer({sessionId,mode,disabled,sendClaude,sendText}:{
     else await send(spoken);
   }
 
-  if(voice.state!=="idle")return <div className="composer">
-    {error && <p className="composer-error" role="alert">{error}</p>}
-    <div className="composer-row voice-row">
-      <button type="button" className="round-button attach" aria-label="Cancel recording" disabled={voice.state==="transcribing"} onClick={voice.cancel}><CloseIcon /></button>
-      <div className="voice-meter" data-state={voice.state} aria-live="polite">
-        {voice.state==="recording"?<>
-          <span className="voice-dot" style={{transform:`scale(${1+voice.level*1.2})`}} />
-          <span>{Math.floor(voice.seconds/60)}:{String(voice.seconds%60).padStart(2,"0")}</span>
-          <span className="voice-hint">Listening…</span>
-        </>:<span className="voice-hint">Transcribing…</span>}
-      </div>
-      <button type="button" className="round-button attach" aria-label="Stop and edit" disabled={voice.state==="transcribing"} onClick={()=>void finishVoice(true)}><EditIcon /></button>
-      <button type="button" className="round-button send" aria-label="Stop and send" disabled={voice.state==="transcribing"} onClick={()=>void finishVoice(false)}>{voice.state==="transcribing"?"…":<SendIcon />}</button>
-    </div>
-  </div>;
+  // The press in progress. The talk button stays the same element while held, so
+  // the pointer capture survives the composer switching to the recording row.
+  const press=useRef<Press & {id:number;starting:Promise<void>}|null>(null);
+  // Set by a press so the click that follows it is skipped; cleared if no click comes (a slid-off touch).
+  const pressed=useRef(0);
+  const [held,setHeld]=useState(false);
+  const [cancelling,setCancelling]=useState(false);
+  function pressDown(e:React.PointerEvent<HTMLButtonElement>) {
+    if(e.button!==0 || press.current || voice.state!=="idle" || disabled || !showMic || sending)return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setError("");
+    // Started here, in the gesture, so getUserMedia and the AudioContext are allowed.
+    press.current={id:e.pointerId,at:Date.now(),x:e.clientX,y:e.clientY,starting:voice.start()};
+    pressed.current=Date.now();
+    setHeld(true);setCancelling(false);
+  }
+  async function pressUp(e:React.PointerEvent<HTMLButtonElement>,lost=false) {
+    const p=press.current;if(!p || p.id!==e.pointerId)return;
+    press.current=null;setHeld(false);setCancelling(false);
+    const token=pressed.current;setTimeout(()=>{if(pressed.current===token)pressed.current=0;},500);
+    voice.wake();
+    // A system sheet (the first mic prompt) or a lost touch: keep recording with the stop buttons showing.
+    const end=lost?"tap":pressEnd(p,Date.now(),e.clientX,e.clientY);
+    await p.starting;
+    if(end==="cancel")voice.cancel();
+    else if(end==="send")await finishVoice(false);
+  }
+
+  const voiceOn=voice.state!=="idle" || held;
+  const talk=held || (showMic && !sending && !voiceOn);
+  const seconds=`${Math.floor(voice.seconds/60)}:${String(voice.seconds%60).padStart(2,"0")}`;
 
   return <div className="composer">
-    {suggestions.length>0 && <div className="suggestions" role="listbox">
+    {!voiceOn && suggestions.length>0 && <div className="suggestions" role="listbox">
       {suggestions.map(s=><button key={s.command} type="button" role="option" className="suggestion" onMouseDown={e=>e.preventDefault()} onClick={()=>{setText(`/${s.command} `);input.current?.focus();}}>
         <span className="suggestion-command">/{s.command}{s.hint && <span className="suggestion-hint"> {s.hint}</span>}</span>
         <span className="suggestion-desc">{s.description}</span>
       </button>)}
     </div>}
     {error && <p className="composer-error" role="alert">{error}</p>}
-    {files.length>0 && <div className="chips">{files.map(f=><span key={f.id} className="chip" data-state={f.error?"error":f.upload?"ready":"uploading"} title={f.error}>
+    {!voiceOn && files.length>0 && <div className="chips">{files.map(f=><span key={f.id} className="chip" data-state={f.error?"error":f.upload?"ready":"uploading"} title={f.error}>
       <span className="truncate">{f.name}</span>
       <button type="button" aria-label={`Remove ${f.name}`} onClick={()=>setFiles(list=>list.filter(a=>a.id!==f.id))}>×</button>
     </span>)}</div>}
-    <div className="composer-row">
-      {mode==="claude" && <>
-        <button type="button" className="round-button attach" aria-label="Attach files" disabled={disabled || files.length>=10} onClick={()=>picker.current?.click()}><PlusIcon /></button>
-        <input ref={picker} type="file" multiple hidden onChange={e=>{void attach(e.target.files);e.target.value="";}} />
+    <div className={voiceOn?"composer-row voice-row":"composer-row"}>
+      {voiceOn?<>
+        {!held && <button type="button" className="round-button attach" aria-label="Cancel recording" disabled={voice.state==="transcribing"} onClick={voice.cancel}><CloseIcon /></button>}
+        <div className="voice-meter" data-state={voice.state} data-cancel={cancelling || undefined} aria-live="polite">
+          {voice.state==="transcribing"?<span className="voice-hint">Transcribing…</span>:<>
+            <span className="voice-dot" style={{transform:`scale(${1+voice.level*1.2})`}} />
+            <span>{seconds}</span>
+            <span className="voice-hint truncate">{!held?"Listening…":cancelling?"Release to cancel":"Release to send, slide ← to cancel"}</span>
+          </>}
+        </div>
+        {!held && <button type="button" className="round-button attach" aria-label="Stop and edit" disabled={voice.state==="transcribing"} onClick={()=>void finishVoice(true)}><EditIcon /></button>}
+      </>:<>
+        {mode==="claude" && <>
+          <button type="button" className="round-button attach" aria-label="Attach files" disabled={disabled || files.length>=10} onClick={()=>picker.current?.click()}><PlusIcon /></button>
+          <input ref={picker} type="file" multiple hidden onChange={e=>{void attach(e.target.files);e.target.value="";}} />
+        </>}
+        <div className="field" data-clear={multiline || cleared!==null || undefined}>
+        <textarea ref={input} rows={1} value={text} maxLength={16000} enterKeyHint={mode==="terminal"?"send":"enter"}
+          placeholder={mode==="claude"?"Message Claude":"Type a command"}
+          autoCapitalize={mode==="terminal"?"off":"sentences"} autoCorrect={mode==="terminal"?"off":"on"} spellCheck={mode==="claude"}
+          onChange={e=>setText(e.target.value)}
+          onKeyDown={e=>{
+            if(e.key!=="Enter" || e.nativeEvent.isComposing)return;
+            if(e.metaKey || e.ctrlKey || ((finePointer() || mode==="terminal") && !e.shiftKey)){e.preventDefault();void send();}
+          }} />
+          {/* Clearing a long draft by holding delete is slow on a phone. Undo stays for a few seconds after. */}
+          {cleared!==null && !text?<button type="button" className="field-clear" data-undo onClick={()=>{setText(cleared);setCleared(null);input.current?.focus();}}>Undo</button>
+            :multiline && <button type="button" className="field-clear" aria-label="Clear message" onMouseDown={e=>e.preventDefault()} onClick={()=>{setCleared(text);setText("");input.current?.focus();}}><CloseIcon /></button>}
+        </div>
       </>}
-      <textarea ref={input} rows={1} value={text} maxLength={16000} enterKeyHint={mode==="terminal"?"send":"enter"}
-        placeholder={mode==="claude"?"Message Claude":"Type a command"}
-        autoCapitalize={mode==="terminal"?"off":"sentences"} autoCorrect={mode==="terminal"?"off":"on"} spellCheck={mode==="claude"}
-        onChange={e=>setText(e.target.value)}
-        onKeyDown={e=>{
-          if(e.key!=="Enter" || e.nativeEvent.isComposing)return;
-          if(e.metaKey || e.ctrlKey || ((finePointer() || mode==="terminal") && !e.shiftKey)){e.preventDefault();void send();}
-        }} />
-      {showMic && !sending
-        ?<button type="button" className="round-button send" aria-label="Talk" disabled={disabled} onClick={()=>{setError("");void voice.start();}}><MicIcon /></button>
-        :<button type="button" className="round-button send" aria-label="Send" disabled={!canSend} onClick={()=>void send()}>{sending?"…":<SendIcon />}</button>}
+      {/* One button in one place for talk, stop-and-send and send, so a held press keeps its element. */}
+      <button type="button" className="round-button send" data-talk={talk || undefined} data-held={held || undefined}
+        aria-label={held?"Release to send":talk?"Talk":voiceOn?"Stop and send":"Send"}
+        disabled={talk?disabled && !held:voiceOn?voice.state==="transcribing":!canSend}
+        onPointerDown={pressDown}
+        onPointerMove={e=>{const p=press.current;if(p && p.id===e.pointerId)setCancelling(slideCancels(p,e.clientX,e.clientY));}}
+        onPointerUp={e=>void pressUp(e)}
+        onPointerCancel={e=>void pressUp(e,true)}
+        onLostPointerCapture={e=>void pressUp(e,true)}
+        // Keep the drawer swipe from starting under a held mic.
+        onTouchStart={e=>{if(talk)e.stopPropagation();}}
+        onContextMenu={e=>{if(talk || held)e.preventDefault();}}
+        onClick={()=>{
+          // The click after a press was already handled by the press; keyboard clicks have no press.
+          if(pressed.current){pressed.current=0;return;}
+          if(talk){setError("");void voice.start();}
+          else if(voiceOn)void finishVoice(false);
+          else void send();
+        }}>
+        {talk?<MicIcon />:voice.state==="transcribing" || sending?"…":<SendIcon />}
+      </button>
     </div>
   </div>;
 }

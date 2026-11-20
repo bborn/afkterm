@@ -7,6 +7,13 @@ export const sessionSchema = z.object({
   tabIndex: z.number(), paneIndex: z.number(), tty: z.string(), profile: z.string(),
   cwd: z.string(), processing: z.boolean(), atPrompt: z.boolean(), selected: z.boolean(),
   claude: z.boolean().default(false),
+  // An agent that needs you (a question or a permission prompt), or that finished
+  // since anyone last looked at it, on any Herdr client. Null when neither, or unknown.
+  attention: z.enum(["blocked","done"]).nullable().default(null),
+  // What a blocked agent is asking, when it says.
+  ask: z.string().max(300).default(""),
+  // Herdr's turn counter, for marking it seen; null on iTerm.
+  turn: z.number().nullable().default(null),
 });
 export type Session = z.infer<typeof sessionSchema>;
 export const listSchema = z.object({ running: z.boolean(), sessions: z.array(sessionSchema), truncated: z.boolean(), metadataError: z.string().optional() });
@@ -35,6 +42,10 @@ export const actionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("key"), sessionId, key: z.enum(keys) }).strict(),
   z.object({ kind: z.literal("split"), sessionId, direction: z.enum(["horizontal", "vertical"]) }).strict(),
   z.object({ kind: z.literal("new-tab"), sessionId }).strict(),
+  // Put the tab holding sessionId just before the tab holding `before`, or last when null.
+  // You looked at it: stop showing it as done on every Herdr client.
+  z.object({ kind: z.literal("seen"), sessionId }).strict(),
+  z.object({ kind: z.literal("move-tab"), sessionId, before: sessionId.nullable() }).strict(),
   z.object({ kind: z.literal("new-window") }).strict(),
   // Answer Claude's AskUserQuestion dialog. `prompt` is the question the client saw.
   z.object({ kind: z.literal("question"), sessionId, prompt: z.string().max(8000), answer: questionAnswerSchema }).strict(),
@@ -94,3 +105,10 @@ export type ClaudeSend=z.infer<typeof claudeSendSchema>;
 export type LiveMessage =
   | { type: "preview"; preview: Preview; at: number }
   | { type: "error"; message: string; at: number };
+
+// Files Claude mentions, as the phone may see them (see server/files.ts).
+export type FileType = "image" | "text" | "markdown" | "pdf" | "video" | "audio" | "other";
+export interface FileInfo { path:string; name:string; kind:"file"|"dir"; type:FileType; size:number; mtime:number; url?:string }
+export interface Folder { path:string; name:string; parent:FileInfo|null; entries:FileInfo[]; truncated:boolean }
+export const fileStatSchema = z.object({ paths: z.array(z.string().min(1).max(4096)).max(200) }).strict();
+export const folderSchema = z.object({ path: z.string().min(1).max(4096) }).strict();

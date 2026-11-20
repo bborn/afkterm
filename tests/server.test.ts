@@ -10,6 +10,7 @@ import { authorize, Pairing, parseLogins, sameOriginSocket } from "../server/aut
 import { LiveSessions } from "../server/live";
 import type { Action, Preview } from "../server/contract";
 import type { Transcriber } from "../server/voice";
+import type { Speaker } from "../server/speech";
 
 const login="sam@example.com";
 const KEY="device-secret";
@@ -61,10 +62,10 @@ function fakeBackend() {
   };
   return {backend,actions,reads:()=>reads};
 }
-async function start(backend:Backend,voice?:Transcriber) {
+async function start(backend:Backend,voice?:Transcriber,speaker?:Speaker) {
   const dir=await mkdtemp(join(tmpdir(),"afkterm-static-"));
   await writeFile(join(dir,"index.html"),"<h1>app</h1>");
-  const {server}=createApp({backend,auth:{...auth,key:KEY},staticDir:dir,voice:voice ?? {available:()=>false,transcribe:async()=>""}});
+  const {server}=createApp({backend,auth:{...auth,key:KEY},staticDir:dir,voice:voice ?? {available:()=>false,transcribe:async()=>""},speaker:speaker ?? {available:()=>false,speak:async()=>Buffer.alloc(0)}});
   await new Promise<void>(r=>server.listen(0,"127.0.0.1",r));
   const base=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {base,close:async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));await rm(dir,{recursive:true,force:true});}};
@@ -115,6 +116,24 @@ test("voice recordings are transcribed on the Mac, and only for paired devices",
     assert.equal((await fetch(`${off.base}/api/transcribe`,{method:"POST",headers,body:"x"})).status,501);
     assert.equal((await (await fetch(`${off.base}/api/me`,{headers})).json()).voice,false);
   } finally {await off.close();}
+});
+
+test("the Mac's voice reads text back as audio, only for paired devices",async()=>{
+  const asked:string[]=[];
+  const app=await start(fakeBackend().backend,undefined,{available:()=>true,speak:async text=>{asked.push(text);return Buffer.from([9,8,7]);}});
+  try {
+    const post=(h:Record<string,string>,text:string)=>fetch(`${app.base}/api/speak`,{method:"POST",headers:{...h,"content-type":"application/json"},body:JSON.stringify({text})});
+    assert.equal((await post({"tailscale-user-login":login,"x-afkterm":"wrong"},"hi")).status,401);
+    const res=await post(headers,"Want me to push it?");
+    assert.equal(res.headers.get("content-type"),"audio/mp4");
+    assert.deepEqual([...new Uint8Array(await res.arrayBuffer())],[9,8,7]);
+    assert.deepEqual(asked,["Want me to push it?"]);
+    assert.equal((await post(headers,"")).status,400);
+    assert.equal((await (await fetch(`${app.base}/api/me`,{headers})).json()).speech,true);
+  } finally {await app.close();}
+  const off=await start(fakeBackend().backend);
+  try {assert.equal((await fetch(`${off.base}/api/speak`,{method:"POST",headers:{...headers,"content-type":"application/json"},body:JSON.stringify({text:"hi"})})).status,501);}
+  finally {await off.close();}
 });
 
 test("a pairing code from the Mac gets a new device the secret, once",async()=>{

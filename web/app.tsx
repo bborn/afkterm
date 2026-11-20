@@ -23,13 +23,14 @@ function Paired() {
   const [sessionId,setSessionId]=useState(sessionFromPath);
   const [host,setHost]=useState("");
   const [app,setApp]=useState("iTerm2");
+  const [moveTabs,setMoveTabs]=useState(false);
   const sessions=useSessions(sessionId?8000:4000);
   useEffect(()=>{
     const sync=()=>setSessionId(sessionFromPath());
     window.addEventListener("popstate",sync);
     return ()=>window.removeEventListener("popstate",sync);
   },[]);
-  useEffect(()=>{api.me().then(me=>{setHost(me.host);if(me.app)setApp(me.app);},()=>{});},[]);
+  useEffect(()=>{api.me().then(me=>{setHost(me.host);if(me.app)setApp(me.app);setMoveTabs(!!me.moveTabs);},()=>{});},[]);
   useEffect(()=>{
     const session=sessions.data?.sessions.find(s=>s.id===sessionId);
     document.title=session?(session.tabName || session.name):host?`afkterm · ${host}`:"afkterm";
@@ -45,6 +46,6 @@ function Paired() {
   return <div className="app">
     {sessionId
       ? <SessionView key={sessionId} sessionId={sessionId} session={session} sessions={sessions.data?.sessions || []} gone={!!sessions.data && !session} back={back} open={id=>{history.replaceState(history.state,"",`/s/${encodeURIComponent(id)}`);setSessionId(id);}} refreshList={sessions.refresh} />
-      : <SessionList host={host} app={app} data={sessions.data} error={sessions.error} refresh={sessions.refresh} open={open} />}
+      : <SessionList host={host} app={app} moveTabs={moveTabs} data={sessions.data} error={sessions.error} refresh={sessions.refresh} open={open} />}
   </div>;
 }

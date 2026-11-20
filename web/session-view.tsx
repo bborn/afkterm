@@ -8,12 +8,25 @@ import { tabLabel } from "./session-list";
 import { BackIcon, MoreIcon } from "./icons";
 import { ChatKeys, TerminalKeys, type Key } from "./keys";
 import { TabDrawer } from "./tab-drawer";
+import { HandsFree, handsFreeSupported, unlockAudio } from "./hands-free";
+import { useVoiceAvailable } from "./voice";
 
 // Horizontal swipes start a drawer drag, except on things that scroll sideways or take text.
-const NO_SWIPE=".keys, pre, table, textarea, input, .sheet, .prompt-details";
+const NO_SWIPE=".keys, pre, table, textarea, input, .sheet, .prompt-details, .viewer";
 
 export function SessionView({sessionId,session,sessions,gone,back,open,refreshList}:{sessionId:string;session?:Session;sessions:Session[];gone:boolean;back:()=>void;open:(id:string)=>void;refreshList:()=>void}) {
   const {preview,error,connected}=useLiveSession(sessionId);
+  // Looking at a Herdr agent clears its "done" on every Herdr client, once per turn,
+  // and only while this page is really in front of you.
+  const turn=session?.turn ?? null;
+  useEffect(()=>{
+    if(turn===null)return;
+    let sent=false;
+    const mark=()=>{if(sent || document.visibilityState!=="visible")return;sent=true;void api.action(sessionId,{kind:"seen"}).catch(()=>{sent=false;});};
+    mark();
+    document.addEventListener("visibilitychange",mark);
+    return ()=>document.removeEventListener("visibilitychange",mark);
+  },[sessionId,turn]);
   const [mode,setMode]=useState<"chat"|"terminal">("chat");
   const [showKeys,setShowKeys]=useStoredState("show-keys",true);
   const [wrap,setWrap]=useStoredState("terminal-wrap",true);
@@ -25,6 +38,8 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
   // The prompt just answered, hidden until the screen catches up.
   const [answered,setAnswered]=useState<string|null>(null);
   const [actionError,setActionError]=useState("");
+  const [handsFree,setHandsFree]=useState(false);
+  const voiceAvailable=useVoiceAvailable();
   const scroller=useRef<HTMLDivElement>(null);
   const atBottom=useRef(true);
   const [behind,setBehind]=useState(false);
@@ -82,6 +97,8 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
 
   const claudeKeysMenu=!!claude && mode==="chat";
   const menuActions:SheetAction[]=[
+    // The tap itself unlocks sound and speech on iOS, so it has to start here.
+    ...(chat && voiceAvailable && handsFreeSupported()?[{label:"Hands-free",onSelect:()=>{unlockAudio();setHandsFree(true);}}]:[]),
     {label:"Show on Mac",onSelect:()=>void run({kind:"focus"})},
     {label:"Rename tab",onSelect:()=>{const name=window.prompt("Tab name",session?tabLabel(session):"");if(name?.trim())void run({kind:"rename",name:name.trim()},()=>refreshList());}},
     {label:"New tab",onSelect:()=>void run({kind:"new-tab"},id=>{refreshList();if(id)open(id);})},
@@ -147,7 +164,7 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
     {claude?.source==="screen" && mode==="chat" && <p className="banner banner-muted">{claude.notice}</p>}
     <div className="scroll" ref={scroller} onScroll={()=>{const el=scroller.current;if(!el)return;atBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<60;if(atBottom.current)setBehind(false);}}>
       {chat && claude
-        ?<Chat view={claude} pending={pending.map(p=>p.text)} />
+        ?<Chat view={claude} pending={pending.map(p=>p.text)} sessionId={sessionId} />
         :<pre className="terminal" data-wrap={wrap} style={{fontSize}}>{preview?preview.text || "The screen is empty.":"Reading screen…"}</pre>}
     </div>
     {behind && <button type="button" className="jump" onClick={toBottom}>↓ New output</button>}
@@ -168,6 +185,7 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
     </div>
     <TabDrawer sessions={sessions} currentId={sessionId} open={drawerOpen} offset={drawerX} width={drawerWidth}
       select={id=>{setDrawerOpen(false);open(id);}} close={()=>setDrawerOpen(false)} />
+    {handsFree && chat && <HandsFree view={claude} send={text=>sendClaude(text,[])} stop={()=>key("escape")} exit={()=>setHandsFree(false)} />}
     <Sheet open={menu} onClose={()=>setMenu(false)} title={session?tabLabel(session):undefined} actions={menuActions} />
   </div>;
 }

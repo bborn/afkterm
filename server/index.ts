@@ -7,11 +7,13 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
-import { actionSchema, claudeSendSchema, sessionId as sessionIdSchema, type Action, type ClaudeSend, type InputOptions, type Preview, type SessionList } from "./contract";
+import { actionSchema, claudeSendSchema, fileStatSchema, folderSchema, sessionId as sessionIdSchema, type Action, type ClaudeSend, type InputOptions, type Preview, type SessionList } from "./contract";
 import { apiKey, authorize, hasKey, Pairing, sameOriginSocket, type AuthConfig } from "./auth";
 import { LiveSessions } from "./live";
 import { MAX_UPLOAD_BYTES, saveUpload } from "./uploads";
+import { FileError, fileRules, FileTokens, listFolder, serveFile, statFiles, type FileRules } from "./files";
 import { MAX_AUDIO_BYTES, whisper, type Transcriber } from "./voice";
+import { kokoro, MAX_SPEECH_CHARS, type Speaker } from "./speech";
 
 export interface Backend {
   list(signal:AbortSignal):Promise<SessionList>;
@@ -24,8 +26,13 @@ export interface Backend {
   transcriptPath?(sessionId:string):string|undefined;
   onScreenUpdate?(sessionId:string,listener:()=>void):()=>void;
   hostName?():string;
+  // The session's folder for resolving relative paths ("" when unknown), or null
+  // when its files aren't on this Mac (a pane on another Herdr machine).
+  localCwd?(sessionId:string,signal:AbortSignal):Promise<string|null>;
   // The terminal app's name, for the UI ("iTerm2" when left out).
   appName?():string;
+  // Whether the "move-tab" action works (iTerm's scripting can't reorder tabs).
+  canMoveTabs?():boolean;
 }
 
 class HttpError extends Error { constructor(public status:number,message:string,public extra:Record<string,unknown>={}){super(message);} }
@@ -59,7 +66,7 @@ const json=async<T>(req:IncomingMessage,schema:z.ZodType<T>)=>{
   return parsed.data;
 };
 
-export function createApp({backend,auth,staticDir,voice=whisper}:{backend:Backend;auth:AuthConfig;staticDir:string;voice?:Transcriber}) {
+export function createApp({backend,auth,staticDir,voice=whisper,speaker=kokoro,files:fileAccess=fileRules()}:{backend:Backend;auth:AuthConfig;staticDir:string;voice?:Transcriber;speaker?:Speaker;files?:FileRules}) {
   const live=new LiveSessions((id,signal)=>backend.preview(id,signal),{quick:backend.quickPreview?(id,signal)=>backend.quickPreview!(id,signal):undefined,watchPath:id=>backend.transcriptPath?.(id),onChange:backend.onScreenUpdate?(id,changed)=>backend.onScreenUpdate!(id,changed):undefined});
   const lifecycle=new AbortController();
   const signal=(req:IncomingMessage)=>{
@@ -69,6 +76,7 @@ export function createApp({backend,auth,staticDir,voice=whisper}:{backend:Backen
   };
 
   const pairing=new Pairing();
+  const tokens=new FileTokens();
 
   async function api(req:IncomingMessage,res:ServerResponse,path:string,login:string) {
     const send=(status:number,data:unknown)=>{res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(data));};
@@ -82,13 +90,29 @@ export function createApp({backend,auth,staticDir,voice=whisper}:{backend:Backen
       if(!pairing.redeem(code))throw new HttpError(403,"That code didn't work. Run `afkterm pair` on your Mac for a new one.");
       return send(200,{key:auth.key});
     }
+    // File links carry their own signature instead of the device header (see FileTokens).
+    if(path==="/api/file" && (method==="GET" || method==="HEAD"))return serveFile(req,res,fileAccess,tokens);
     if(!hasKey(key,auth))throw new HttpError(401,"This device isn't paired yet.",{pairing:true});
     if(path==="/api/pair-code" && method==="POST")return send(200,{code:pairing.create()});
-    if(path==="/api/me" && method==="GET")return send(200,{login,host:backend.hostName?.() ?? hostname().replace(/\.local$/,""),app:backend.appName?.() ?? "iTerm2",voice:voice.available()});
+    if(path==="/api/me" && method==="GET")return send(200,{login,host:backend.hostName?.() ?? hostname().replace(/\.local$/,""),app:backend.appName?.() ?? "iTerm2",voice:voice.available(),speech:speaker.available(),moveTabs:!!backend.canMoveTabs?.()});
     if(path==="/api/sessions" && method==="GET")return send(200,await backend.list(signal(req)));
     if(path==="/api/transcribe" && method==="POST"){
       if(!voice.available())throw new HttpError(501,"Voice input isn't set up on your Mac. Run `brew install whisper-cpp ffmpeg` and download a model.");
       return send(200,{text:await voice.transcribe(await body(req,MAX_AUDIO_BYTES),signal(req))});
+    }
+    if(path==="/api/voice-warm" && method==="POST"){voice.warm?.();return send(200,{});}
+    if(path==="/api/speak" && method==="POST"){
+      if(!speaker.available())throw new HttpError(501,"The Mac's voice isn't set up.");
+      const {text}=await json(req,z.object({text:z.string().min(1).max(MAX_SPEECH_CHARS)}));
+      const audio=await speaker.speak(text,signal(req));
+      res.writeHead(200,{"content-type":"audio/mp4","cache-control":"no-store","content-length":audio.length});
+      return void res.end(audio);
+    }
+    // What hands-free mode did, for working out why something went wrong. Event names and sizes only, never what was said.
+    if(path==="/api/hands-free-log" && method==="POST"){
+      const {events}=await json(req,z.object({events:z.array(z.string().max(120)).max(50)}));
+      for(const event of events)console.log(`hands-free: ${event.replace(/[^\w .:=,/()-]/g,"")}`);
+      return send(200,{});
     }
     if(path==="/api/new-window" && method==="POST")return send(200,await backend.action({kind:"new-window"},signal(req)));
     const match=/^\/api\/sessions\/([^/]+)\/([a-z-]+)$/.exec(path);
@@ -109,6 +133,17 @@ export function createApp({backend,auth,staticDir,voice=whisper}:{backend:Backen
       const result=await backend.sendClaude(id,await json(req,claudeSendSchema),signal(req));
       live.poke(id);
       return send(200,result);
+    }
+    if(route==="POST file-stat"){
+      const {paths}=await json(req,fileStatSchema);
+      const cwd=backend.localCwd?await backend.localCwd(id,signal(req)):"";
+      return send(200,{files:cwd===null?{}:await statFiles(paths,cwd,fileAccess,tokens)});
+    }
+    if(route==="POST folder"){
+      const {path:input}=await json(req,folderSchema);
+      const cwd=backend.localCwd?await backend.localCwd(id,signal(req)):"";
+      if(cwd===null)throw new HttpError(404,"This session's files are on another machine.");
+      return send(200,await listFolder(input,cwd,fileAccess,tokens));
     }
     if(route==="POST uploads"){
       const name=decodeURIComponent(String(req.headers["x-file-name"] || "attachment"));
@@ -145,7 +180,7 @@ export function createApp({backend,auth,staticDir,voice=whisper}:{backend:Backen
       if(path.startsWith("/api/"))await api(req,res,path,auth_.login);
       else await serveStatic(req,res,path);
     } catch(error) {
-      const status=error instanceof HttpError?error.status:error instanceof z.ZodError?400:500;
+      const status=error instanceof HttpError || error instanceof FileError?error.status:error instanceof z.ZodError?400:500;
       const message=error instanceof z.ZodError?error.issues.map(i=>i.message).join("; "):error instanceof Error?error.message:String(error);
       if(!res.headersSent){res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});}
       res.end(JSON.stringify({error:message,...(error instanceof HttpError?error.extra:{})}));

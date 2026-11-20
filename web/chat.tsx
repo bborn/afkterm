@@ -1,8 +1,10 @@
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage, ClaudeView, Prompt } from "./api";
 import { Folded, FoldButton } from "./question";
+import { FileLinks, fileLinkComponents, rehypeFileLinks, useFileLinks } from "./file-viewer";
+import { pathsIn } from "./file-paths";
 
 const short=(s:string,n=80)=>s.length>n?s.slice(0,n-1)+"…":s;
 const base=(p:string)=>p.split("/").filter(Boolean).at(-1) || p;
@@ -29,14 +31,29 @@ export function toolSummary(m:ChatMessage):string {
   return short((first || "").replace(/\s+/g," "));
 }
 
+// The file or folder a tool call works on, and the line a Read starts at.
+export function toolPath(m:ChatMessage):{path:string;line?:number}|undefined {
+  if(!m.name || !/^(Read|Write|Edit|MultiEdit|NotebookEdit|Grep|Glob)$/.test(m.name))return;
+  let input:Record<string,unknown>;
+  try {input=JSON.parse(m.text);} catch {return;}
+  const path=[input.file_path,input.notebook_path,input.path].find(v=>typeof v==="string" && v) as string|undefined;
+  return path?{path,line:m.name==="Read" && typeof input.offset==="number" && input.offset>0?input.offset:undefined}:undefined;
+}
+
 const Tool=memo(function Tool({m}:{m:ChatMessage}) {
   const [open,setOpen]=useState(false);
+  const links=useFileLinks();
+  const target=toolPath(m);
+  const file=target && links?.info(target.path);
   return <div className="tool" data-status={m.status} data-open={open}>
-    <button type="button" className="tool-line" onClick={()=>setOpen(!open)} aria-expanded={open}>
-      <span className="tool-status" aria-label={m.status} />
-      <span className="tool-name">{m.name}</span>
-      <span className="tool-summary">{toolSummary(m)}</span>
-    </button>
+    <div className="tool-line">
+      <button type="button" className="tool-toggle" onClick={()=>setOpen(!open)} aria-expanded={open}>
+        <span className="tool-status" aria-label={m.status} />
+        <span className="tool-name">{m.name}</span>
+        {!file && <span className="tool-summary">{toolSummary(m)}</span>}
+      </button>
+      {file && target && <button type="button" className="tool-summary file-link" onClick={()=>links!.open({raw:target.path,...target})}>{toolSummary(m)}</button>}
+    </div>
     {open && <div className="tool-body"><pre>{m.text}</pre>{m.result && <pre className="tool-result">{m.result}</pre>}</div>}
   </div>;
 });
@@ -52,10 +69,18 @@ function ToolRun({tools}:{tools:ChatMessage[]}) {
 }
 
 const Assistant=memo(function Assistant({text}:{text:string}) {
-  return <div className="assistant markdown"><Markdown remarkPlugins={[remarkGfm]} components={{a:({node:_,...props})=><a {...props} target="_blank" rel="noreferrer" />,img:({src,alt})=><a href={typeof src==="string"?src:undefined} target="_blank" rel="noreferrer">{alt || "image"}</a>}}>{text}</Markdown></div>;
+  // Reading the links context re-renders this when the Mac answers which paths exist.
+  const links=useFileLinks();
+  return <div className="assistant markdown"><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={links?[rehypeFileLinks(p=>!!links.info(p))]:[]} components={fileLinkComponents(links)}>{text}</Markdown></div>;
 });
 
-export function Chat({view,pending=[]}:{view:ClaudeView;pending?:string[]}) {
+export function Chat({view,pending=[],sessionId}:{view:ClaudeView;pending?:string[];sessionId?:string}) {
+  const paths=useMemo(()=>[...new Set(view.messages.flatMap(m=>m.role==="assistant"?pathsIn(m.text):m.role==="tool"?[toolPath(m)?.path ?? ""].filter(Boolean):[]))],[view.messages]);
+  const chat=<ChatMessages view={view} pending={pending} />;
+  return sessionId?<FileLinks sessionId={sessionId} paths={paths}>{chat}</FileLinks>:chat;
+}
+
+function ChatMessages({view,pending}:{view:ClaudeView;pending:string[]}) {
   const blocks:({kind:"tools";tools:ChatMessage[]}|{kind:"message";m:ChatMessage})[]=[];
   for(const m of view.messages){
     if(m.role==="tool"){

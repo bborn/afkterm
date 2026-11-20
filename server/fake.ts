@@ -6,7 +6,7 @@ import { answerQuestion } from "./question";
 // A stand-in for iTerm2 so the UI can be developed and demoed on any machine
 // (`afkterm start --demo`). Nothing here touches a real terminal.
 const HOME="/Users/sam";
-const session=(id:string,o:Partial<Session>):Session=>({id,name:"zsh",tabName:"",windowId:1,windowName:"Window 1",group:null,tabIndex:1,paneIndex:1,tty:`/dev/ttys00${id.length}`,profile:"Default",cwd:HOME,processing:false,atPrompt:true,selected:false,claude:false,...o});
+const session=(id:string,o:Partial<Session>):Session=>({id,name:"zsh",tabName:"",windowId:1,windowName:"Window 1",group:null,tabIndex:1,paneIndex:1,tty:`/dev/ttys00${id.length}`,profile:"Default",cwd:HOME,processing:false,atPrompt:true,selected:false,claude:false,attention:null,ask:"",turn:null,...o} as Session);
 const shop={id:"g1",name:"storefront",color:"#e8833a",collapsed:false};
 const site={id:"g2",name:"blog",color:"color(display-p3 0.30000 0.55000 0.95000)",collapsed:false};
 
@@ -53,6 +53,8 @@ const screenFor=(tab:FakeTab)=>tab.screen+(working.has(tab.session.id)?"\n\n✻ 
 
 export const fake={
   hostName:()=>"Sam's MacBook",
+  // Demo paths are made up; only real files on this computer get links.
+  async localCwd(id:string) { return find(id).session.cwd; },
   async list():Promise<SessionList> { return {running:true,sessions:tabs.map(t=>t.session),truncated:false}; },
   async preview(id:string):Promise<Preview> {
     const tab=find(id);const text=tab.ask?await tab.ask.read():screenFor(tab);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { Action, ClaudeSend, InputOptions, LiveMessage, Preview, SessionList, Upload } from "../server/contract";
+import type { Action, ClaudeSend, FileInfo, Folder, InputOptions, LiveMessage, Preview, SessionList, Upload } from "../server/contract";
 
-export type { Action, ChatMessage, ClaudeView, InputSkill, Preview, Prompt, Question, QuestionAnswer, Session, SessionList, Upload } from "../server/contract";
+export type { Action, ChatMessage, FileInfo, FileType, Folder, ClaudeView, InputSkill, Preview, Prompt, Question, QuestionAnswer, Session, SessionList, Upload } from "../server/contract";
 
 // The device secret this phone got by pairing (see `afkterm pair`).
 const KEY="afkterm-key", LEGACY_KEY="iterm-web-key";
@@ -30,14 +30,24 @@ const enc=encodeURIComponent;
 type SessionAction=Exclude<Action,{kind:"new-window"}> extends infer A?A extends unknown?Omit<A,"sessionId">:never:never;
 
 export const api={
-  me:()=>request<{login:string;host:string;app?:string;voice?:boolean}>("/api/me"),
+  me:()=>request<{login:string;host:string;app?:string;voice?:boolean;speech?:boolean;moveTabs?:boolean}>("/api/me"),
   sessions:()=>request<SessionList>("/api/sessions"),
   preview:(id:string)=>request<Preview>(`/api/sessions/${enc(id)}/preview`),
   skills:(id:string)=>request<InputOptions>(`/api/sessions/${enc(id)}/skills`),
   action:(id:string,action:SessionAction)=>request<{sessionId:string|null}>(`/api/sessions/${enc(id)}/action`,{method:"POST",body:JSON.stringify(action)}),
   newWindow:()=>request<{sessionId:string|null}>("/api/new-window",{method:"POST"}),
   sendClaude:(id:string,input:ClaudeSend)=>request<{sessionId:string|null}>(`/api/sessions/${enc(id)}/claude`,{method:"POST",body:JSON.stringify(input)}),
+  speak:async(text:string,signal?:AbortSignal)=>{
+    const res=await fetch("/api/speak",{method:"POST",body:JSON.stringify({text}),signal,headers:{"x-afkterm":deviceKey() || "unpaired","content-type":"application/json"}});
+    if(!res.ok)throw new Error(((await res.json().catch(()=>({}))) as {error?:string}).error || `Request failed (${res.status})`);
+    return res.arrayBuffer();
+  },
+  warmVoice:()=>request<{}>("/api/voice-warm",{method:"POST"}).catch(()=>({})),
+  handsFreeLog:(events:string[])=>request<{}>("/api/hands-free-log",{method:"POST",body:JSON.stringify({events})}),
   transcribe:(audio:Blob)=>request<{text:string}>("/api/transcribe",{method:"POST",body:audio,headers:{"content-type":"application/octet-stream"}}),
+  // Which of these paths exist on the Mac (relative ones start in the session's folder).
+  fileStat:(id:string,paths:string[])=>request<{files:Record<string,FileInfo>}>(`/api/sessions/${enc(id)}/file-stat`,{method:"POST",body:JSON.stringify({paths})}),
+  folder:(id:string,path:string)=>request<Folder>(`/api/sessions/${enc(id)}/folder`,{method:"POST",body:JSON.stringify({path})}),
   upload:(id:string,file:File)=>request<Upload>(`/api/sessions/${enc(id)}/uploads`,{method:"POST",body:file,headers:{"content-type":"application/octet-stream","x-file-name":enc(file.name)}}),
 };
 

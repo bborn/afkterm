@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { dropTarget, moved, shiftFor, type Block } from "./tab-order";
 import { api, errorMessage, useStoredState, type Session, type SessionList as List } from "./api";
 import { Sheet } from "./sheet";
 import { PlusIcon } from "./icons";
@@ -13,10 +14,23 @@ export function ink(color:string) {
 }
 
 export function subtitle(s:Session,panes:number) {
+  if(s.attention==="blocked" && s.ask)return s.ask;
   if(panes>1)return `Pane ${s.paneIndex} · ${s.name}`;
   const cwd=s.cwd.replace(/^\/Users\/[^/]+/,"~");
   if(s.claude)return cwd;
   return [s.atPrompt?"At prompt":s.processing?"Running":"",cwd].filter(Boolean).join(" · ");
+}
+
+// Herdr's word for an agent waiting on you, or one that finished while nobody looked.
+export function Attention({session:s}:{session:Session}) {
+  if(s.attention==="blocked")return <span className="attention" data-kind="blocked">Needs you</span>;
+  if(s.attention==="done")return <span className="attention" data-kind="done">Done</span>;
+  return null;
+}
+// The most urgent in a group, for its header: blocked counts first.
+export function groupAttention(sessions:Session[]) {
+  const blocked=sessions.filter(s=>s.attention==="blocked").length, done=sessions.filter(s=>s.attention==="done").length;
+  return blocked?{kind:"blocked",count:blocked}:done?{kind:"done",count:done}:null;
 }
 
 export type Section={key:string;windowId:number;group:Session["group"];sessions:Session[]};
@@ -32,7 +46,12 @@ export function groupSections(sessions:Session[]):Section[] {
 }
 export const matches=(s:Session,q:string)=>!q || [s.group?.name,s.tabName,s.name,s.cwd,s.profile].join(" ").toLowerCase().includes(q);
 
-export function SessionList({host,app="iTerm2",data,error,refresh,open}:{host:string;app?:string;data:List|null;error:string;refresh:()=>void;open:(id:string)=>void}) {
+// A tab being dragged to a new place in its group.
+interface Drag {key:string;blocks:Block[];from:number;y0:number;scroll0:number;y:number;target:number;rows:string[][]}
+const HOLD_MS=450;
+const rank=(ids:string[],id:string)=>{const i=ids.indexOf(id);return i<0?Infinity:i;};
+
+export function SessionList({host,app="iTerm2",moveTabs=false,data,error,refresh,open}:{host:string;app?:string;moveTabs?:boolean;data:List|null;error:string;refresh:()=>void;open:(id:string)=>void}) {
   const [query,setQuery]=useState("");
   const [collapsed,setCollapsed]=useStoredState<Record<string,boolean>>("collapsed-groups",{});
   const [closing,setClosing]=useState<Session|null>(null);
@@ -40,9 +59,78 @@ export function SessionList({host,app="iTerm2",data,error,refresh,open}:{host:st
   const [busy,setBusy]=useState(false);
   const [actionError,setActionError]=useState("");
 
+  const [drag,setDrag]=useState<Drag|null>(null);
+  // The order you dropped tabs in, shown until the next list from the Mac.
+  // Row ids in the new order; tab numbers can't be used, since they follow position.
+  const [pending,setPending]=useState<{key:string;ids:string[];at:number}|null>(null);
+  // Kept until the Mac's list shows the new order, so a refresh already on its way doesn't undo it.
+  useEffect(()=>{
+    if(!pending || !data)return;
+    const ids=groupSections(data.sessions).find(x=>x.key===pending.key)?.sessions.map(s=>s.id) ?? [];
+    if(ids.join()===pending.ids.join() || Date.now()-pending.at>6000)setPending(null);
+  },[data,pending]);
+  const list=useRef<HTMLElement>(null);
+
   const q=query.trim().toLowerCase();
   const sessions=(data?.sessions || []).filter(s=>matches(s,q));
-  const sections=groupSections(sessions);
+  const sections=groupSections(sessions).map(section=>pending?.key!==section.key?section
+    :{...section,sessions:[...section.sessions].sort((a,b)=>rank(pending.ids,a.id)-rank(pending.ids,b.id))});
+  const canDrag=moveTabs && !q;
+
+  // Holding a row picks up its tab; the rows' places are measured once, at pickup.
+  function pickUp(key:string,tab:number,y:number) {
+    const el=list.current;if(!el)return;
+    const blocks:Block[]=[];const rows:string[][]=[];
+    for(const row of el.querySelectorAll<HTMLElement>(`[data-section="${CSS.escape(key)}"]`)){
+      const r=row.getBoundingClientRect(),t=Number(row.dataset.tab);
+      if(blocks.at(-1)?.tab===t){blocks.at(-1)!.height+=r.height;rows.at(-1)!.push(row.dataset.id!);}
+      else {blocks.push({tab:t,top:r.top,height:r.height});rows.push([row.dataset.id!]);}
+    }
+    const from=blocks.findIndex(b=>b.tab===tab);
+    if(from<0 || blocks.length<2)return;
+    setDrag({key,blocks,from,y0:y,scroll0:el.scrollTop,y,target:from,rows});
+  }
+  useEffect(()=>{
+    if(!drag)return;
+    const el=list.current!;
+    let current=drag,frame=0;
+    const update=(y:number)=>{
+      const dy=y-current.y0+el.scrollTop-current.scroll0;
+      current={...current,y,target:dropTarget(current.blocks,current.from,dy)};
+      setDrag(current);
+    };
+    // Near the top or bottom edge, the list scrolls so a tab can travel further.
+    const scroll=()=>{
+      const r=el.getBoundingClientRect(),edge=56;
+      const step=current.y<r.top+edge?-8:current.y>r.bottom-edge?8:0;
+      if(step){const before=el.scrollTop;el.scrollTop+=step;if(el.scrollTop!==before)update(current.y);}
+      frame=requestAnimationFrame(scroll);
+    };
+    frame=requestAnimationFrame(scroll);
+    const move=(e:TouchEvent)=>{e.preventDefault();update(e.touches[0].clientY);};
+    const end=()=>{
+      const {from,target,rows,key}=current;
+      setDrag(null);
+      if(target===from)return;
+      const order=moved(rows,from,target);
+      setPending({key,ids:order.flat(),at:Date.now()});
+      setActionError("");
+      api.action(rows[from][0],{kind:"move-tab",before:order[target+1]?.[0] ?? null})
+        .then(refresh,e=>{setPending(null);setActionError(errorMessage(e));});
+    };
+    window.addEventListener("touchmove",move,{passive:false});
+    window.addEventListener("touchend",end);
+    window.addEventListener("touchcancel",end);
+    return ()=>{cancelAnimationFrame(frame);window.removeEventListener("touchmove",move);window.removeEventListener("touchend",end);window.removeEventListener("touchcancel",end);};
+    // Only a new pickup restarts this; moves update `current` here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[drag?.key,drag?.from,drag?.y0]);
+  const lift=(key:string,tab:number):{dy:number;lifted:boolean}=>{
+    if(!drag || drag.key!==key)return {dy:0,lifted:false};
+    const i=drag.blocks.findIndex(b=>b.tab===tab);
+    if(i===drag.from)return {dy:drag.y-drag.y0+(list.current?.scrollTop ?? 0)-drag.scroll0,lifted:true};
+    return {dy:shiftFor(i,drag.from,drag.target,drag.blocks[drag.from].height),lifted:false};
+  };
   const windows=new Set(data?.sessions.map(s=>s.windowId)).size;
   const current=data?.sessions.find(s=>s.selected) || data?.sessions[0];
 
@@ -61,7 +149,7 @@ export function SessionList({host,app="iTerm2",data,error,refresh,open}:{host:st
     <div className="search"><input type="search" placeholder="Search tabs, folders…" value={query} onChange={e=>setQuery(e.target.value)} autoCapitalize="off" autoCorrect="off" /></div>
     {(error || actionError) && <p className="banner" role="alert">{actionError || error}</p>}
     {data?.metadataError && <p className="banner banner-muted">{data.metadataError}</p>}
-    <main className="list" aria-label="Tabs">
+    <main className="list" aria-label="Tabs" ref={list} data-dragging={drag?"":undefined}>
       {!data && !error && <p className="empty">Connecting to {app}…</p>}
       {data && !data.running && <p className="empty">{app} isn't running on this Mac.</p>}
       {data?.running && !sessions.length && <p className="empty">{q?"No matching tabs.":"No open tabs."}</p>}
@@ -70,9 +158,14 @@ export function SessionList({host,app="iTerm2",data,error,refresh,open}:{host:st
         return <section key={`${section.key}:${i}`}>
           {windows>1 && (i===0 || sections[i-1].windowId!==section.windowId) && <p className="window-label">Window {section.windowId}</p>}
           {section.group && <button type="button" className="group" style={{background:section.group.color,color:ink(section.group.color)}} aria-expanded={!folded} onClick={()=>setCollapsed({...collapsed,[section.key]:!folded})}>
-            <span>{section.group.name || "Unnamed group"}</span><span className="group-count">{section.sessions.length}{folded?" ›":" ⌄"}</span>
+            <span>{section.group.name || "Unnamed group"}</span>
+            <span className="group-end">
+              {(()=>{const g=groupAttention(section.sessions);return g && <span className="group-attention" data-kind={g.kind}>{g.count}</span>;})()}
+              <span className="group-count">{section.sessions.length}{folded?" ›":" ⌄"}</span>
+            </span>
           </button>}
-          {!folded && section.sessions.map(s=><Row key={s.id} session={s} subtitle={subtitle(s,section.sessions.filter(p=>p.tabIndex===s.tabIndex).length)} open={()=>open(s.id)} close={()=>setClosing(s)} />)}
+          {!folded && section.sessions.map(s=><Row key={s.id} session={s} section={section.key} subtitle={subtitle(s,section.sessions.filter(p=>p.tabIndex===s.tabIndex).length)} open={()=>open(s.id)} close={()=>setClosing(s)}
+            {...lift(section.key,s.tabIndex)} hold={canDrag && section.sessions.length>1?y=>pickUp(section.key,s.tabIndex,y):undefined} />)}
         </section>;
       })}
       {data && <p className="list-footer">{data.sessions.length} sessions · {windows} {windows===1?"window":"windows"}{data.truncated?" · list truncated":""}</p>}
@@ -86,29 +179,46 @@ export function SessionList({host,app="iTerm2",data,error,refresh,open}:{host:st
   </div>;
 }
 
-// Swipe left to reveal Close; tap to open.
-function Row({session:s,subtitle,open,close}:{session:Session;subtitle:string;open:()=>void;close:()=>void}) {
+// Swipe left to reveal Close; tap to open; hold, then drag, to move the tab.
+function Row({session:s,section,subtitle,open,close,dy,lifted,hold}:{session:Session;section:string;subtitle:string;open:()=>void;close:()=>void;dy:number;lifted:boolean;hold?:(y:number)=>void}) {
   const [offset,setOffset]=useState(0);
   const [revealed,setRevealed]=useState(false);
   const gesture=useRef<{x:number;y:number;dx:number;dy:number}|null>(null);
   const swiped=useRef(false);
-  return <div className="row-wrap">
+  const timer=useRef(0);
+  const held=useRef(false);
+  const lastTouch=useRef(0);
+  const cancelHold=()=>{clearTimeout(timer.current);timer.current=0;};
+  useEffect(()=>cancelHold,[]);
+  return <div className="row-wrap" data-section={section} data-tab={s.tabIndex} data-id={s.id} data-lifted={lifted || undefined}
+    style={dy || lifted?{transform:`translateY(${dy}px)`}:undefined}>
     {(revealed || offset<0) && <button type="button" className="row-close" onClick={()=>{setRevealed(false);close();}}>Close</button>}
     <button type="button" className="row" data-selected={s.selected} style={{transform:`translateX(${offset || (revealed?-88:0)}px)`}}
-      onTouchStart={e=>{swiped.current=false;const t=e.touches[0];gesture.current={x:t.clientX,y:t.clientY,dx:0,dy:0};}}
+      onTouchStart={e=>{
+        swiped.current=false;held.current=false;lastTouch.current=Date.now();
+        const t=e.touches[0];gesture.current={x:t.clientX,y:t.clientY,dx:0,dy:0};
+        if(hold && !revealed && e.touches.length===1){
+          const y=t.clientY;cancelHold();
+          timer.current=window.setTimeout(()=>{timer.current=0;held.current=true;swiped.current=true;navigator.vibrate?.(10);hold(gesture.current ? gesture.current.y+gesture.current.dy : y);},HOLD_MS);
+        }
+      }}
       onTouchMove={e=>{
-        const g=gesture.current;if(!g)return;
+        const g=gesture.current;if(!g || held.current)return;
         const t=e.touches[0];g.dx=t.clientX-g.x;g.dy=t.clientY-g.y;
+        // Moving before the hold is up means scrolling or swiping, not picking it up.
+        if(Math.hypot(g.dx,g.dy)>8)cancelHold();
         if(Math.abs(g.dx)>Math.abs(g.dy)*1.5 && Math.abs(g.dx)>10){swiped.current=true;setOffset(Math.max(-88,Math.min(0,(revealed?-88:0)+g.dx)));}
       }}
-      onTouchEnd={()=>{const g=gesture.current;gesture.current=null;setOffset(0);if(g && swiped.current && Math.abs(g.dx)>45)setRevealed(g.dx<0);}}
+      onTouchEnd={()=>{cancelHold();const g=gesture.current;gesture.current=null;setOffset(0);if(!held.current && g && swiped.current && Math.abs(g.dx)>45)setRevealed(g.dx<0);}}
+      onTouchCancel={cancelHold}
       onClick={()=>{if(swiped.current){swiped.current=false;return;}if(revealed){setRevealed(false);return;}open();}}
-      onContextMenu={e=>{e.preventDefault();close();}}>
+      // A long press with a finger moves the tab; the context menu (right click) still closes it.
+      onContextMenu={e=>{e.preventDefault();if(Date.now()-lastTouch.current>1000)close();}}>
       <span className="row-main">
         <span className="row-title">{s.claude && <span className="claude-mark" aria-label="Claude">✳</span>}<span className="truncate">{tabLabel(s)}</span></span>
         <span className="row-sub">{subtitle}</span>
       </span>
-      <span className="activity" data-active={s.processing} aria-label={s.processing?"Output active":"Quiet"} />
+      {s.attention?<Attention session={s} />:<span className="activity" data-active={s.processing} aria-label={s.processing?"Output active":"Quiet"} />}
     </button>
   </div>;
 }

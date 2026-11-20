@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Session } from "./api";
-import { groupSections, ink, matches, tabLabel } from "./session-list";
+import { Attention, groupSections, ink, matches, tabLabel } from "./session-list";
 
 // The tab list as a drawer over the current session: swipe right to pull it in,
 // tap a tab to switch. `offset` is the drag position in px (null when not dragging).
@@ -25,8 +25,8 @@ export function TabDrawer({sessions,currentId,open,offset,width,select,close}:{
         {sections.map((section,i)=><section key={`${section.key}:${i}`}>
           {section.group && <p className="drawer-group" style={{background:section.group.color,color:ink(section.group.color)}}>{section.group.name || "Unnamed group"}</p>}
           {section.sessions.map(s=><button key={s.id} type="button" className="drawer-row" data-current={s.id===currentId} onClick={()=>{if(s.id===currentId)close();else select(s.id);}}>
-            <span className="row-title">{s.claude && <span className="claude-mark" aria-label="Claude">✳</span>}<span className="truncate">{tabLabel(s)}</span></span>
-            <span className="row-sub">{section.sessions.filter(p=>p.tabIndex===s.tabIndex).length>1?`Pane ${s.paneIndex} · `:""}{s.cwd.replace(/^\/Users\/[^/]+/,"~")}</span>
+            <span className="row-title">{s.claude && <span className="claude-mark" aria-label="Claude">✳</span>}<span className="truncate">{tabLabel(s)}</span><Attention session={s} /></span>
+            <span className="row-sub">{section.sessions.filter(p=>p.tabIndex===s.tabIndex).length>1?`Pane ${s.paneIndex} · `:""}{s.attention==="blocked" && s.ask?s.ask:s.cwd.replace(/^\/Users\/[^/]+/,"~")}</span>
           </button>)}
         </section>)}
         {!sections.length && <p className="empty">{q?"No matching tabs.":"No tabs."}</p>}

@@ -31,7 +31,7 @@ async function listViaApi(signal:AbortSignal):Promise<SessionList> {
   windows.forEach((window,wi)=>(window.tabs || []).forEach((tab,ti)=>tabSessions(tab).forEach((s,si)=>{
     rows.push({tabId:tab.tabId || "",session:{
       id:s.uniqueIdentifier!,windowId:wi+1,windowName:`Window ${wi+1}`,tabIndex:ti+1,paneIndex:si+1,
-      selected:window.selectedTabId===tab.tabId && tab.activeSessionId===s.uniqueIdentifier,
+      selected:window.selectedTabId===tab.tabId && tab.activeSessionId===s.uniqueIdentifier,attention:null,ask:"",turn:null,
       group:tab.tabGroupId?{id:tab.tabGroupId,name:tab.tabGroupName || "",color:groupColor(tab.tabGroupColor || ""),collapsed:!!tab.tabGroupCollapsed}:null,
     }});
   })));
@@ -129,6 +129,12 @@ export async function inputOptions(sessionId:string,signal:AbortSignal) {
   const {cwd}=await context(sessionId,signal);
   if(!cwd.startsWith("/"))return {skills:[],truncated:false};
   return inputOptionsSchema.parse(await inputSkills(cwd,signal));
+}
+
+// iTerm only runs on this Mac, so every session's files are local.
+export async function localCwd(sessionId:string,signal:AbortSignal) {
+  const {cwd}=await context(sessionId,signal);
+  return cwd.startsWith("/")?cwd:"";
 }
 
 async function type(sessionId:string,text:string,signal:AbortSignal) {
