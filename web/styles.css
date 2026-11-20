@@ -73,6 +73,7 @@ button:disabled { opacity: .45; cursor: default; }
 .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .row-title { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; min-width: 0; }
 .row-sub { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-emoji { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
 .claude-mark { color: var(--accent); font-size: 14px; flex-shrink: 0; }
 .activity { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); opacity: .3; flex-shrink: 0; }
 .activity[data-active="true"] { background: var(--green); opacity: 1; }

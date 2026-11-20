@@ -6,6 +6,18 @@ import { PlusIcon } from "./icons";
 
 export const tabLabel=(s:Session)=>(s.tabName || s.name || "Untitled tab").replace(/^[✳✻✶✢·*]\s*/,"");
 
+// A tab named "🛟 Support" gets that emoji as its icon, as in Herdr's sidebar.
+const EMOJI=/^((?:\p{Extended_Pictographic}|\p{Regional_Indicator})(?:\uFE0F|\u200D\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Regional_Indicator})*)\s*/u;
+export function TabTitle({session:s}:{session:Session}) {
+  const label=tabLabel(s), emoji=label.match(EMOJI);
+  const name=emoji && label.length>emoji[0].length?label.slice(emoji[0].length):label;
+  return <>
+    {emoji && name!==label?<span className="tab-emoji" aria-hidden="true">{emoji[1]}</span>
+      :s.claude && <span className="claude-mark" aria-label="Claude">✳</span>}
+    <span className="truncate">{name}</span>
+  </>;
+}
+
 // Readable text on an iTerm tab-group color.
 export function ink(color:string) {
   const rgb=color.startsWith("#")?[1,3,5].map(i=>parseInt(color.slice(i,i+2),16)/255):(color.match(/[01]\.\d+/g)||[]).map(Number);
@@ -215,7 +227,7 @@ function Row({session:s,section,subtitle,open,close,dy,lifted,hold}:{session:Ses
       // A long press with a finger moves the tab; the context menu (right click) still closes it.
       onContextMenu={e=>{e.preventDefault();if(Date.now()-lastTouch.current>1000)close();}}>
       <span className="row-main">
-        <span className="row-title">{s.claude && <span className="claude-mark" aria-label="Claude">✳</span>}<span className="truncate">{tabLabel(s)}</span></span>
+        <span className="row-title"><TabTitle session={s} /></span>
         <span className="row-sub">{subtitle}</span>
       </span>
       {s.attention?<Attention session={s} />:<span className="activity" data-active={s.processing} aria-label={s.processing?"Output active":"Quiet"} />}

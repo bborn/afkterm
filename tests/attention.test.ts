@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { attention } from "../server/herdr";
 
-const t=(state:string|null,turn:number,seen?:string)=>({status:state?{state}:null,labels:seen===undefined?{}:{"herdr.seen":seen},turn});
+const t=(state:string|null,turn:number,seen?:string)=>({status:state?{state}:null,labels:(seen===undefined?{}:{"herdr.seen":seen}) as Record<string,string>,turn});
 
 test("Herdr's shared rule: blocked needs you, done until someone looks at that turn",()=>{
   assert.equal(attention(t("blocked",3,"3")),"blocked");
