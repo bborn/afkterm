@@ -12,6 +12,9 @@ import { HandsFree, handsFreeSupported, unlockAudio } from "./hands-free";
 import { useVoiceAvailable } from "./voice";
 
 // Horizontal swipes start a drawer drag, except on things that scroll sideways or take text.
+// A swipe from this close to the left edge always opens the tab drawer; from
+// anywhere else, only a quick flick that starts moving within FLICK_START_MS does.
+const EDGE=28, FLICK_START_MS=150;
 const NO_SWIPE=".keys, pre, table, textarea, input, .sheet, .prompt-details, .viewer";
 
 export function SessionView({sessionId,session,sessions,gone,back,open,refreshList}:{sessionId:string;session?:Session;sessions:Session[];gone:boolean;back:()=>void;open:(id:string)=>void;refreshList:()=>void}) {
@@ -133,8 +136,12 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
       if(!d.decided){
         if(Math.abs(dx)<10 && Math.abs(dy)<10)return;
         d.decided=true;
-        // Right opens, left closes; anything mostly vertical is a scroll.
-        d.active=Math.abs(dx)>Math.abs(dy)*1.3 && (drawerOpen?dx<0:dx>0);
+        // Right opens, left closes; anything mostly vertical is a scroll. To open,
+        // start at the left edge, or flick: a press that waits before moving is
+        // selecting text, and so is anything while text is selected.
+        const selecting=!!window.getSelection()?.toString();
+        const opening=d.x<=EDGE || (Date.now()-d.t<=FLICK_START_MS && !selecting);
+        d.active=Math.abs(dx)>Math.abs(dy)*1.5 && (drawerOpen?dx<0:dx>0 && opening);
       }
       if(d.active)setDrawerX(Math.max(0,Math.min(drawerWidth,d.base+dx)));
     }}

@@ -3,6 +3,7 @@ import { api, pair, pairCodeFromUrl, UNPAIRED, useSessions } from "./api";
 import { Pairing } from "./pairing";
 import { SessionList } from "./session-list";
 import { SessionView } from "./session-view";
+import { onNotificationOpen, syncAttention } from "./notifications";
 
 // Two screens: the tab index ("/") and one session ("/s/<id>").
 const sessionFromPath=()=>{const m=/^\/s\/(.+)$/.exec(location.pathname);return m?decodeURIComponent(m[1]):null;};
@@ -30,6 +31,9 @@ function Paired() {
     window.addEventListener("popstate",sync);
     return ()=>window.removeEventListener("popstate",sync);
   },[]);
+  useEffect(()=>{if(sessions.data)syncAttention(sessions.data.sessions);},[sessions.data]);
+  // Tapping a notification opens that agent.
+  useEffect(()=>onNotificationOpen(path=>{history.pushState({fromIndex:true},"",path);setSessionId(sessionFromPath());}),[]);
   useEffect(()=>{api.me().then(me=>{setHost(me.host);if(me.app)setApp(me.app);setMoveTabs(!!me.moveTabs);},()=>{});},[]);
   useEffect(()=>{
     const session=sessions.data?.sessions.find(s=>s.id===sessionId);

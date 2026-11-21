@@ -14,6 +14,7 @@ import { MAX_UPLOAD_BYTES, saveUpload } from "./uploads";
 import { FileError, fileRules, FileTokens, listFolder, serveFile, statFiles, type FileRules } from "./files";
 import { MAX_AUDIO_BYTES, whisper, type Transcriber } from "./voice";
 import { kokoro, MAX_SPEECH_CHARS, type Speaker } from "./speech";
+import { Push, pushOnSchema } from "./push";
 
 export interface Backend {
   list(signal:AbortSignal):Promise<SessionList>;
@@ -66,7 +67,7 @@ const json=async<T>(req:IncomingMessage,schema:z.ZodType<T>)=>{
   return parsed.data;
 };
 
-export function createApp({backend,auth,staticDir,voice=whisper,speaker=kokoro,files:fileAccess=fileRules()}:{backend:Backend;auth:AuthConfig;staticDir:string;voice?:Transcriber;speaker?:Speaker;files?:FileRules}) {
+export function createApp({backend,auth,staticDir,voice=whisper,speaker=kokoro,files:fileAccess=fileRules(),push}:{backend:Backend;auth:AuthConfig;staticDir:string;voice?:Transcriber;speaker?:Speaker;files?:FileRules;push?:Push}) {
   const live=new LiveSessions((id,signal)=>backend.preview(id,signal),{quick:backend.quickPreview?(id,signal)=>backend.quickPreview!(id,signal):undefined,watchPath:id=>backend.transcriptPath?.(id),onChange:backend.onScreenUpdate?(id,changed)=>backend.onScreenUpdate!(id,changed):undefined});
   const lifecycle=new AbortController();
   const signal=(req:IncomingMessage)=>{
@@ -93,6 +94,15 @@ export function createApp({backend,auth,staticDir,voice=whisper,speaker=kokoro,f
     // File links carry their own signature instead of the device header (see FileTokens).
     if(path==="/api/file" && (method==="GET" || method==="HEAD"))return serveFile(req,res,fileAccess,tokens);
     if(!hasKey(key,auth))throw new HttpError(401,"This device isn't paired yet.",{pairing:true});
+    const phone=typeof req.headers["x-push-id"]==="string"?req.headers["x-push-id"]:undefined;
+    push?.touch(phone);
+    if(path==="/api/push" && method==="GET")return send(200,push?{key:push.publicKey,on:!!phone && push.has(phone)}:{key:""});
+    if(path==="/api/push/on" && method==="POST"){
+      if(!push)throw new HttpError(501,"Notifications aren't available.");
+      const {subscription,done}=await json(req,pushOnSchema);
+      return send(200,{id:push.on(subscription,done)});
+    }
+    if(path==="/api/push/off" && method==="POST"){if(phone)push?.off(phone);return send(200,{});}
     if(path==="/api/pair-code" && method==="POST")return send(200,{code:pairing.create()});
     if(path==="/api/me" && method==="GET")return send(200,{login,host:backend.hostName?.() ?? hostname().replace(/\.local$/,""),app:backend.appName?.() ?? "iTerm2",voice:voice.available(),speech:speaker.available(),moveTabs:!!backend.canMoveTabs?.()});
     if(path==="/api/sessions" && method==="GET")return send(200,await backend.list(signal(req)));
@@ -207,6 +217,15 @@ export function createApp({backend,auth,staticDir,voice=whisper,speaker=kokoro,f
       ws.on("error",()=>ws.terminate());
     });
   });
+  // Look for agents that need you while a phone wants to hear about it.
+  if(push){
+    const watch=setInterval(async()=>{
+      if(!push.phones)return;
+      try {await push.check((await backend.list(AbortSignal.any([lifecycle.signal,AbortSignal.timeout(15000)]))).sessions);}
+      catch { /* The terminal app is busy or closed; try again next time. */ }
+    },4000);
+    lifecycle.signal.addEventListener("abort",()=>clearInterval(watch));
+  }
   server.on("close",()=>lifecycle.abort());
   return {server,live};
 }
@@ -221,7 +240,7 @@ export async function startServer({port,auth,fake=false,terminals="iterm"}:{port
   if(!fake && !auth.key)throw new Error("No device secret configured. Run `afkterm setup`.");
   if(!auth.allowedLogins.size && !auth.allowLocal)throw new Error("No Tailscale login is allowed. Run `afkterm setup`, or set AFKTERM_ALLOWED_LOGINS.");
   const backend:Backend=fake?(await import("./fake")).fake:terminals==="herdr"?await import("./herdr"):await import("./iterm");
-  const {server}=createApp({backend,auth,staticDir:staticRoot()});
+  const {server}=createApp({backend,auth,staticDir:staticRoot(),push:fake?undefined:new Push()});
   // Loopback only: other devices reach afkterm solely through Tailscale Serve.
   await new Promise<void>((resolve,reject)=>{server.once("error",reject);server.listen(port,"127.0.0.1",()=>resolve());});
   console.log(`afkterm listening on http://127.0.0.1:${port}${fake?" (demo data)":terminals==="herdr"?" (Herdr)":""}`);

@@ -7,9 +7,11 @@ export type { Action, ChatMessage, FileInfo, FileType, Folder, ClaudeView, Input
 const KEY="afkterm-key", LEGACY_KEY="iterm-web-key";
 const deviceKey=()=>{try{return localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || "";}catch{return "";}};
 export const UNPAIRED="afkterm:unpaired";
+// Which phone this is, once it turned on notifications, so the Mac doesn't notify a phone that has afkterm open.
+const pushId=()=>{try{return localStorage.getItem("afkterm-push-id") || "";}catch{return "";}};
 
 async function request<T>(path:string,init:RequestInit={}):Promise<T> {
-  const res=await fetch(path,{...init,headers:{"x-afkterm":deviceKey() || "unpaired",...(init.body && typeof init.body==="string"?{"content-type":"application/json"}:{}),...init.headers}});
+  const res=await fetch(path,{...init,headers:{"x-afkterm":deviceKey() || "unpaired",...(pushId()?{"x-push-id":pushId()}:{}),...(init.body && typeof init.body==="string"?{"content-type":"application/json"}:{}),...init.headers}});
   const data=await res.json().catch(()=>({error:`Request failed (${res.status})`}));
   if(data.pairing)window.dispatchEvent(new Event(UNPAIRED));
   if(!res.ok)throw new Error(data.error || `Request failed (${res.status})`);
@@ -32,6 +34,9 @@ type SessionAction=Exclude<Action,{kind:"new-window"}> extends infer A?A extends
 export const api={
   me:()=>request<{login:string;host:string;app?:string;voice?:boolean;speech?:boolean;moveTabs?:boolean}>("/api/me"),
   sessions:()=>request<SessionList>("/api/sessions"),
+  push:()=>request<{key:string;on?:boolean}>("/api/push"),
+  pushOn:(subscription:{endpoint:string;keys:{p256dh:string;auth:string}},done:boolean)=>request<{id:string}>("/api/push/on",{method:"POST",body:JSON.stringify({subscription,done})}),
+  pushOff:()=>request<{}>("/api/push/off",{method:"POST"}),
   preview:(id:string)=>request<Preview>(`/api/sessions/${enc(id)}/preview`),
   skills:(id:string)=>request<InputOptions>(`/api/sessions/${enc(id)}/skills`),
   action:(id:string,action:SessionAction)=>request<{sessionId:string|null}>(`/api/sessions/${enc(id)}/action`,{method:"POST",body:JSON.stringify(action)}),

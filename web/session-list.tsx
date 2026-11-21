@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { dropTarget, moved, shiftFor, type Block } from "./tab-order";
 import { api, errorMessage, useStoredState, type Session, type SessionList as List } from "./api";
 import { Sheet } from "./sheet";
-import { PlusIcon } from "./icons";
+import { BellIcon, PlusIcon } from "./icons";
+import { useNotifications } from "./notifications";
 
 export const tabLabel=(s:Session)=>(s.tabName || s.name || "Untitled tab").replace(/^[✳✻✶✢·*]\s*/,"");
 
@@ -58,6 +59,49 @@ export function groupSections(sessions:Session[]):Section[] {
 }
 export const matches=(s:Session,q:string)=>!q || [s.group?.name,s.tabName,s.name,s.cwd,s.profile].join(" ").toLowerCase().includes(q);
 
+// What the tab list shows, shared by the list and the tab drawer so both read the
+// same way: All or Needs you, and which groups are folded.
+export function useListView(all:Session[]) {
+  const [inbox,setInbox]=useStoredState("inbox",false);
+  const [collapsed,setCollapsed]=useStoredState<Record<string,boolean>>("collapsed-groups",{});
+  // Only Herdr reports which agents need you.
+  const canInbox=all.some(s=>s.turn!==null);
+  return {inbox:inbox && canInbox,setInbox,canInbox,collapsed,setCollapsed,
+    waiting:all.filter(s=>s.attention).length,blocked:all.some(s=>s.attention==="blocked")};
+}
+export type ListView=ReturnType<typeof useListView>;
+
+const urgency=(x:Session)=>x.attention==="blocked"?0:1;
+export function visibleSections(all:Session[],q:string,inbox:boolean):Section[] {
+  const sections=groupSections(all.filter(s=>matches(s,q) && (!inbox || s.attention)));
+  if(!inbox)return sections;
+  // In the inbox, what's waiting on you comes before what's only done, in each group and across them.
+  return sections.map(section=>({...section,sessions:[...section.sessions].sort((a,b)=>urgency(a)-urgency(b))}))
+    .sort((a,b)=>Math.min(...a.sessions.map(urgency))-Math.min(...b.sessions.map(urgency)));
+}
+export const isFolded=(view:ListView,section:Section,q:string)=>!q && !view.inbox && (view.collapsed[section.key] ?? section.group?.collapsed ?? false);
+
+export function ListFilter({view}:{view:ListView}) {
+  if(!view.canInbox)return null;
+  return <div className="list-filter" role="tablist" aria-label="Show">
+    <button type="button" role="tab" aria-selected={!view.inbox} onClick={()=>view.setInbox(false)}>All</button>
+    <button type="button" role="tab" aria-selected={view.inbox} onClick={()=>view.setInbox(true)}>Needs you{view.waiting?<span className="list-filter-count" data-kind={view.blocked?"blocked":"done"}>{view.waiting}</span>:null}</button>
+  </div>;
+}
+
+export function GroupHeader({view,section,folded}:{view:ListView;section:Section;folded:boolean}) {
+  if(!section.group)return null;
+  const g=groupAttention(section.sessions);
+  return <button type="button" className="group" style={{background:section.group.color,color:ink(section.group.color)}} aria-expanded={!folded}
+    onClick={()=>{if(!view.inbox)view.setCollapsed({...view.collapsed,[section.key]:!folded});}}>
+    <span>{section.group.name || "Unnamed group"}</span>
+    <span className="group-end">
+      {g && <span className="group-attention" data-kind={g.kind}>{g.count}</span>}
+      <span className="group-count">{section.sessions.length}{folded?" ›":" ⌄"}</span>
+    </span>
+  </button>;
+}
+
 // A tab being dragged to a new place in its group.
 interface Drag {key:string;blocks:Block[];from:number;y0:number;scroll0:number;y:number;target:number;rows:string[][]}
 const HOLD_MS=450;
@@ -65,9 +109,10 @@ const rank=(ids:string[],id:string)=>{const i=ids.indexOf(id);return i<0?Infinit
 
 export function SessionList({host,app="iTerm2",moveTabs=false,data,error,refresh,open}:{host:string;app?:string;moveTabs?:boolean;data:List|null;error:string;refresh:()=>void;open:(id:string)=>void}) {
   const [query,setQuery]=useState("");
-  const [collapsed,setCollapsed]=useStoredState<Record<string,boolean>>("collapsed-groups",{});
   const [closing,setClosing]=useState<Session|null>(null);
   const [menu,setMenu]=useState(false);
+  const [bell,setBell]=useState(false);
+  const notify=useNotifications();
   const [busy,setBusy]=useState(false);
   const [actionError,setActionError]=useState("");
 
@@ -84,10 +129,11 @@ export function SessionList({host,app="iTerm2",moveTabs=false,data,error,refresh
   const list=useRef<HTMLElement>(null);
 
   const q=query.trim().toLowerCase();
-  const sessions=(data?.sessions || []).filter(s=>matches(s,q));
-  const sections=groupSections(sessions).map(section=>pending?.key!==section.key?section
+  const view=useListView(data?.sessions || []);
+  const sections=visibleSections(data?.sessions || [],q,view.inbox).map(section=>pending?.key!==section.key?section
     :{...section,sessions:[...section.sessions].sort((a,b)=>rank(pending.ids,a.id)-rank(pending.ids,b.id))});
-  const canDrag=moveTabs && !q;
+  const shown=sections.reduce((n,s)=>n+s.sessions.length,0);
+  const canDrag=moveTabs && !q && !view.inbox;
 
   // Holding a row picks up its tab; the rows' places are measured once, at pickup.
   function pickUp(key:string,tab:number,y:number) {
@@ -156,26 +202,22 @@ export function SessionList({host,app="iTerm2",moveTabs=false,data,error,refresh
   return <div className="screen">
     <header className="topbar">
       <div className="topbar-title"><span className="host-dot" data-ok={!error && !!data} />{host || "afkterm"}</div>
+      <button type="button" className="icon-button bell" aria-label="Notifications" data-on={notify.state==="on" || undefined} onClick={()=>setBell(true)}><BellIcon /></button>
       <button type="button" className="icon-button" aria-label="New tab or window" disabled={busy} onClick={()=>setMenu(true)}><PlusIcon /></button>
     </header>
     <div className="search"><input type="search" placeholder="Search tabs, folders…" value={query} onChange={e=>setQuery(e.target.value)} autoCapitalize="off" autoCorrect="off" /></div>
-    {(error || actionError) && <p className="banner" role="alert">{actionError || error}</p>}
+    <ListFilter view={view} />
+    {(error || actionError || notify.error) && <p className="banner" role="alert">{actionError || error || notify.error}</p>}
     {data?.metadataError && <p className="banner banner-muted">{data.metadataError}</p>}
     <main className="list" aria-label="Tabs" ref={list} data-dragging={drag?"":undefined}>
       {!data && !error && <p className="empty">Connecting to {app}…</p>}
       {data && !data.running && <p className="empty">{app} isn't running on this Mac.</p>}
-      {data?.running && !sessions.length && <p className="empty">{q?"No matching tabs.":"No open tabs."}</p>}
+      {data?.running && !shown && <p className="empty">{q?"No matching tabs.":view.inbox?"Nothing needs you right now.":"No open tabs."}</p>}
       {sections.map((section,i)=>{
-        const folded=!q && (collapsed[section.key] ?? section.group?.collapsed ?? false);
+        const folded=isFolded(view,section,q);
         return <section key={`${section.key}:${i}`}>
           {windows>1 && (i===0 || sections[i-1].windowId!==section.windowId) && <p className="window-label">Window {section.windowId}</p>}
-          {section.group && <button type="button" className="group" style={{background:section.group.color,color:ink(section.group.color)}} aria-expanded={!folded} onClick={()=>setCollapsed({...collapsed,[section.key]:!folded})}>
-            <span>{section.group.name || "Unnamed group"}</span>
-            <span className="group-end">
-              {(()=>{const g=groupAttention(section.sessions);return g && <span className="group-attention" data-kind={g.kind}>{g.count}</span>;})()}
-              <span className="group-count">{section.sessions.length}{folded?" ›":" ⌄"}</span>
-            </span>
-          </button>}
+          <GroupHeader view={view} section={section} folded={folded} />
           {!folded && section.sessions.map(s=><Row key={s.id} session={s} section={section.key} subtitle={subtitle(s,section.sessions.filter(p=>p.tabIndex===s.tabIndex).length)} open={()=>open(s.id)} close={()=>setClosing(s)}
             {...lift(section.key,s.tabIndex)} hold={canDrag && section.sessions.length>1?y=>pickUp(section.key,s.tabIndex,y):undefined} />)}
         </section>;
@@ -186,9 +228,30 @@ export function SessionList({host,app="iTerm2",moveTabs=false,data,error,refresh
       ...(current?[{label:"New tab",onSelect:()=>void run(()=>api.action(current.id,{kind:"new-tab"}))}]:[]),
       {label:"New window",onSelect:()=>void run(api.newWindow)},
     ]} />
+    <NotifySheet open={bell} onClose={()=>setBell(false)} notify={notify} />
     <Sheet open={!!closing} onClose={()=>setClosing(null)} title={closing?`Close “${tabLabel(closing)}”?`:""} message="This closes the tab and all its panes. Running programs may stop."
       actions={closing?[{label:"Close tab",destructive:true,onSelect:()=>void run(()=>api.action(closing.id,{kind:"close-tab",confirmed:true}),false)}]:[]} />
   </div>;
+}
+
+function NotifySheet({open,onClose,notify}:{open:boolean;onClose:()=>void;notify:ReturnType<typeof useNotifications>}) {
+  const {state,done,enable,disable}=notify;
+  const message={
+    loading:"Checking…",
+    unsupported:"This browser can't show notifications.",
+    "home-screen":"Notifications only work in the Home Screen app. In Safari, tap Share, then Add to Home Screen, and open afkterm from there.",
+    denied:"Notifications are turned off for afkterm. You can allow them in Settings, under Notifications.",
+    off:"Get a notification on this phone when an agent needs you. You won't get one while afkterm is open.",
+    on:done?"You'll get a notification when an agent needs you or is done.":"You'll get a notification when an agent needs you.",
+  }[state];
+  const actions=state==="off"?[
+    {label:"When an agent needs you",onSelect:()=>void enable(false)},
+    {label:"When it needs you or is done",onSelect:()=>void enable(true)},
+  ]:state==="on"?[
+    done?{label:"Only when an agent needs you",onSelect:()=>void enable(false)}:{label:"Also when an agent is done",onSelect:()=>void enable(true)},
+    {label:"Turn off notifications",destructive:true,onSelect:()=>void disable()},
+  ]:[];
+  return <Sheet open={open} onClose={onClose} title="Notifications" message={message} actions={actions} />;
 }
 
 // Swipe left to reveal Close; tap to open; hold, then drag, to move the tab.

@@ -7,3 +7,4 @@ export const MoreIcon=()=><svg {...props}><circle cx="5" cy="12" r="1.3" fill="c
 export const MicIcon=()=><svg {...props}><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>;
 export const CloseIcon=()=><svg {...props}><path d="M6 6l12 12M18 6L6 18"/></svg>;
 export const EditIcon=()=><svg {...props}><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>;
+export const BellIcon=()=><svg {...props} width={21} height={21}><path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 8 2.5 8h-17S6 15 6 9M10 20.5a2.2 2.2 0 0 0 4 0"/></svg>;
