@@ -15,7 +15,11 @@ import { useVoiceAvailable } from "./voice";
 // A swipe from this close to the left edge always opens the tab drawer; from
 // anywhere else, only a quick flick that starts moving within FLICK_START_MS does.
 const EDGE=28, FLICK_START_MS=150;
-const NO_SWIPE=".keys, pre, table, textarea, input, .sheet, .prompt-details, .viewer";
+const NO_SWIPE=".keys, pre, table, .sheet, .prompt-details, .viewer";
+const FIELD="textarea, input";
+// A swipe left while typing puts the keyboard away. The draft stays in the box (and is saved per session).
+const typing=()=>!!document.activeElement?.matches(FIELD);
+const dismissKeyboard=()=>{if(typing())(document.activeElement as HTMLElement).blur();};
 
 export function SessionView({sessionId,session,sessions,gone,back,open,refreshList}:{sessionId:string;session?:Session;sessions:Session[];gone:boolean;back:()=>void;open:(id:string)=>void;refreshList:()=>void}) {
   const {preview,error,connected}=useLiveSession(sessionId);
@@ -51,7 +55,7 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
   const [drawerOpen,setDrawerOpen]=useState(false);
   const [drawerX,setDrawerX]=useState<number|null>(null);
   const drawerWidth=Math.min(window.innerWidth*.86,380);
-  const drag=useRef<{x:number;y:number;t:number;base:number;decided:boolean;active:boolean}|null>(null);
+  const drag=useRef<{x:number;y:number;t:number;base:number;decided:boolean;active:boolean;field:boolean}|null>(null);
 
   const claude=preview?.claude;
   const chat=mode==="chat" && claude?.source==="transcript";
@@ -128,7 +132,7 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
     onTouchStart={e=>{
       const t=e.touches[0];
       drag.current=e.touches.length===1 && !(e.target as Element).closest(NO_SWIPE)
-        ?{x:t.clientX,y:t.clientY,t:Date.now(),base:drawerOpen?drawerWidth:0,decided:false,active:false}:null;
+        ?{x:t.clientX,y:t.clientY,t:Date.now(),base:drawerOpen?drawerWidth:0,decided:false,active:false,field:!!(e.target as Element).closest(FIELD)}:null;
     }}
     onTouchMove={e=>{
       const d=drag.current;if(!d)return;
@@ -140,8 +144,14 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
         // start at the left edge, or flick: a press that waits before moving is
         // selecting text, and so is anything while text is selected.
         const selecting=!!window.getSelection()?.toString();
-        const opening=d.x<=EDGE || (Date.now()-d.t<=FLICK_START_MS && !selecting);
-        d.active=Math.abs(dx)>Math.abs(dy)*1.5 && (drawerOpen?dx<0:dx>0 && opening);
+        const flick=Date.now()-d.t<=FLICK_START_MS;
+        const sideways=Math.abs(dx)>Math.abs(dy)*1.5;
+        // In the text box itself only a quick flick counts: a slower drag there moves the cursor or selects.
+        if(d.field && !flick)return void (drag.current=null);
+        if(sideways && dx<0 && !drawerOpen && typing()){dismissKeyboard();drag.current=null;return;}
+        const opening=d.x<=EDGE || (flick && !selecting);
+        d.active=sideways && (drawerOpen?dx<0:dx>0 && opening);
+        if(d.active && !drawerOpen)dismissKeyboard();
       }
       if(d.active)setDrawerX(Math.max(0,Math.min(drawerWidth,d.base+dx)));
     }}
@@ -157,7 +167,7 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
     onTouchCancel={()=>{drag.current=null;setDrawerX(null);}}>
     <header className="topbar">
       <button type="button" className="icon-button back" aria-label="All tabs" onClick={back}><BackIcon /></button>
-      <div className="topbar-center" role="button" tabIndex={0} aria-label="Show tabs" onClick={()=>setDrawerOpen(true)} onKeyDown={e=>{if(e.key==="Enter")setDrawerOpen(true);}}>
+      <div className="topbar-center" role="button" tabIndex={0} aria-label="Show tabs" onClick={()=>{dismissKeyboard();setDrawerOpen(true);}} onKeyDown={e=>{if(e.key==="Enter")setDrawerOpen(true);}}>
         <p className="topbar-name">{session?tabLabel(session):"Session"}</p>
         <p className="topbar-status" data-state={prompt || question?"prompt":working?"working":connected?"ok":"offline"}>{status}</p>
       </div>

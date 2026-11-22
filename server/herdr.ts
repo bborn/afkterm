@@ -180,10 +180,30 @@ async function facts(terminal:string):Promise<Terminal> {
     throw error;
   }
 }
-// History of a full-screen app (Claude) is read by scrolling it, which takes
-// seconds whenever its screen changed; lines:0 is the screen alone, in ~1ms.
+// History of a full-screen app (Claude) is read by scrolling it, which can take
+// herdr-core from a few seconds to most of a minute, and one slow read holds up
+// the next on the shared connection; lines:0 is the screen alone, in ~1ms. So wait
+// a little for the history, then show the screen alone and let the read finish in
+// the background: one read per terminal at a time, and the next look uses it if it's fresh.
+const HISTORY_WAIT=3000, HISTORY_FRESH=10000;
+const reading=new Map<string,Promise<void>>();
+const histories=new Map<string,{text:string;at:number}>();
 async function screen(terminal:string,lines=SCREEN_LINES) {
-  return str((await (lines?history:hc).call<{text:string}>("terminal.read",{terminal,lines})).text);
+  const visible=async()=>str((await hc.call<{text:string}>("terminal.read",{terminal,lines:0})).text);
+  if(!lines)return visible();
+  const startedAt=Date.now();
+  let read=reading.get(terminal);
+  if(!read){
+    read=history.call<{text:string}>("terminal.read",{terminal,lines},120000)
+      .then(r=>{histories.set(terminal,{text:str(r.text),at:Date.now()});})
+      .finally(()=>reading.delete(terminal));
+    reading.set(terminal,read);
+  }
+  const done=await Promise.race([read.then(()=>true),new Promise<false>(r=>setTimeout(()=>r(false),HISTORY_WAIT))]).catch(()=>false);
+  const last=histories.get(terminal);
+  // Fresh means read after this look started, or very recently.
+  if(done && last && (last.at>=startedAt || Date.now()-last.at<HISTORY_FRESH))return last.text;
+  return visible();
 }
 
 // Claude's chat view, from its saved transcript when it runs on this Mac.
