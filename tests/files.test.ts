@@ -143,3 +143,14 @@ test("HEIC photos are served as JPEG, converted on the Mac",{skip:!existsSync("/
     assert.deepEqual([...new Uint8Array(await res.arrayBuffer()).subarray(0,2)],[0xff,0xd8]);
   } finally {await app.close();await f.cleanup();}
 });
+
+test("files you attached from the phone are served, but nothing else in afkterm's folder",async()=>{
+  const f=await fixture();
+  try {
+    const uploads=join(f.home,".afkterm/attachments");
+    await mkdir(join(uploads,"abc"),{recursive:true});await writeFile(join(uploads,"abc/1-photo.png"),"png");
+    const rules=fileRules(f.home,[],[join(f.home,".afkterm")],[uploads]);
+    assert.equal(await allowed(join(uploads,"abc/1-photo.png"),rules),true);
+    for(const p of [".afkterm/config.json",".afkterm",".afkterm/attachments"])assert.equal(await allowed(join(f.home,p),rules),false,p);
+  } finally {await f.cleanup();}
+});

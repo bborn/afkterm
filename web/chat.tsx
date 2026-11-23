@@ -5,6 +5,7 @@ import type { ChatMessage, ClaudeView, Prompt } from "./api";
 import { Folded, FoldButton } from "./question";
 import { FileLinks, fileLinkComponents, rehypeFileLinks, useFileLinks } from "./file-viewer";
 import { pathsIn } from "./file-paths";
+import { AttachmentTile, kindOf, splitAttachments } from "./attachments";
 
 const short=(s:string,n=80)=>s.length>n?s.slice(0,n-1)+"…":s;
 const base=(p:string)=>p.split("/").filter(Boolean).at(-1) || p;
@@ -74,8 +75,24 @@ const Assistant=memo(function Assistant({text}:{text:string}) {
   return <div className="assistant markdown"><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={links?[rehypeFileLinks(p=>!!links.info(p))]:[]} components={fileLinkComponents(links)}>{text}</Markdown></div>;
 });
 
+// Your message, with what you attached as tiles under it instead of file paths.
+const UserMessage=memo(function UserMessage({text,pending}:{text:string;pending?:boolean}) {
+  const links=useFileLinks();
+  const {text:words,files}=splitAttachments(text);
+  return <div className="user" data-pending={pending || undefined}>
+    {words && <div className="bubble">{words}</div>}
+    {files.length>0 && <div className="tiles tiles-sent">{files.map((f,i)=>{
+      const info=f.path?links?.info(f.path):undefined;
+      return <AttachmentTile key={i} name={f.name} src={info?.url && kindOf(f.name)==="image"?info.url:undefined}
+        open={info && f.path?()=>links!.open({raw:f.path!,path:f.path!}):undefined} />;
+    })}</div>}
+  </div>;
+});
+
 export function Chat({view,pending=[],sessionId}:{view:ClaudeView;pending?:string[];sessionId?:string}) {
-  const paths=useMemo(()=>[...new Set(view.messages.flatMap(m=>m.role==="assistant"?pathsIn(m.text):m.role==="tool"?[toolPath(m)?.path ?? ""].filter(Boolean):[]))],[view.messages]);
+  const paths=useMemo(()=>[...new Set(view.messages.flatMap(m=>m.role==="assistant"?pathsIn(m.text)
+    :m.role==="tool"?[toolPath(m)?.path ?? ""].filter(Boolean)
+    :m.role==="user"?splitAttachments(m.text).files.flatMap(f=>f.path?[f.path]:[]):[]))],[view.messages]);
   const chat=<ChatMessages view={view} pending={pending} />;
   return sessionId?<FileLinks sessionId={sessionId} paths={paths}>{chat}</FileLinks>:chat;
 }
@@ -94,9 +111,9 @@ function ChatMessages({view,pending}:{view:ClaudeView;pending:string[]}) {
     {blocks.map(b=>b.kind==="tools"
       ?<ToolRun key={b.tools[0].id} tools={b.tools} />
       :b.m.role==="user"
-        ?<div key={b.m.id} className="user"><div className="bubble">{b.m.text}</div></div>
+        ?<UserMessage key={b.m.id} text={b.m.text} />
         :<Assistant key={b.m.id} text={b.m.text} />)}
-    {pending.map((text,i)=><div key={`pending-${i}`} className="user" data-pending="true"><div className="bubble">{text}</div></div>)}
+    {pending.map((text,i)=><UserMessage key={`pending-${i}`} text={text} pending />)}
   </div>;
 }
 

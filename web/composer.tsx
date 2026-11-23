@@ -3,8 +3,10 @@ import { api, errorMessage, type InputSkill, type Upload } from "./api";
 import { CloseIcon, EditIcon, MicIcon, PlusIcon, SendIcon } from "./icons";
 import { useVoice, useVoiceAvailable } from "./voice";
 import { pressEnd, slideCancels, type Press } from "./push-to-talk";
+import { AttachmentTile, kindOf } from "./attachments";
 
-type Attachment = { id:string; name:string; upload?:Upload; error?:string };
+// `preview` is a local copy of an image, shown until it's sent.
+type Attachment = { id:string; name:string; upload?:Upload; error?:string; preview?:string };
 const finePointer=()=>window.matchMedia("(pointer: fine)").matches;
 
 // The message box. In Claude mode it sends one bracketed paste plus Enter, with
@@ -54,7 +56,8 @@ export function Composer({sessionId,mode,disabled,sendClaude,sendText}:{
   async function attach(list:FileList|null) {
     for(const file of Array.from(list || []).slice(0,10-files.length)){
       const id=crypto.randomUUID();
-      setFiles(f=>[...f,{id,name:file.name}]);
+      const preview=kindOf(file.name)==="image" || file.type.startsWith("image/")?URL.createObjectURL(file):undefined;
+      setFiles(f=>[...f,{id,name:file.name,preview}]);
       try {const upload=await api.upload(sessionId,file);setFiles(f=>f.map(a=>a.id===id?{...a,upload}:a));}
       catch(e){setFiles(f=>f.map(a=>a.id===id?{...a,error:errorMessage(e)}:a));}
     }
@@ -131,10 +134,9 @@ export function Composer({sessionId,mode,disabled,sendClaude,sendText}:{
       </button>)}
     </div>}
     {error && <p className="composer-error" role="alert">{error}</p>}
-    {!voiceOn && files.length>0 && <div className="chips">{files.map(f=><span key={f.id} className="chip" data-state={f.error?"error":f.upload?"ready":"uploading"} title={f.error}>
-      <span className="truncate">{f.name}</span>
-      <button type="button" aria-label={`Remove ${f.name}`} onClick={()=>setFiles(list=>list.filter(a=>a.id!==f.id))}>×</button>
-    </span>)}</div>}
+    {!voiceOn && files.length>0 && <div className="tiles">{files.map(f=><AttachmentTile key={f.id} name={f.name} src={f.preview}
+      state={f.error?"error":f.upload?"ready":"uploading"} error={f.error}
+      remove={()=>{if(f.preview)URL.revokeObjectURL(f.preview);setFiles(list=>list.filter(a=>a.id!==f.id));}} />)}</div>}
     <div className={voiceOn?"composer-row voice-row":"composer-row"}>
       {voiceOn?<>
         {!held && <button type="button" className="round-button attach" aria-label="Cancel recording" disabled={voice.state==="transcribing"} onClick={voice.cancel}><CloseIcon /></button>}

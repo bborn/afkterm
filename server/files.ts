@@ -13,22 +13,23 @@ import { CONFIG_DIR } from "./config";
 // Lets the phone look at files Claude mentions. Only the home folder and the temp
 // folders are served, checked after resolving symlinks, and never the places that
 // hold keys: the phone is one stolen device away from being someone else's.
-export interface FileRules { home:string; roots:string[]; denied:string[] }
+// `uploads` is the one place under afkterm's own folder that's served: what you attached from the phone.
+export interface FileRules { home:string; roots:string[]; denied:string[]; uploads?:string[] }
 
 export class FileError extends Error { constructor(public status:number,message:string){super(message);} }
 
 const real=(p:string)=>{try {return realpathSync(p);} catch {return p;}};
 const uniq=(list:string[])=>[...new Set(list.flatMap(p=>[resolve(p),real(p)]))];
-export function fileRules(home=homedir(),temps=["/tmp","/private/tmp","/var/folders",tmpdir()],config=[CONFIG_DIR,join(home,".iterm-web")]):FileRules {
+export function fileRules(home=homedir(),temps=["/tmp","/private/tmp","/var/folders",tmpdir()],config=[CONFIG_DIR,join(home,".iterm-web")],uploads=[join(CONFIG_DIR,"attachments")]):FileRules {
   // Credentials that commonly live in the home folder, beyond the ones asked for by name.
   const secrets=[".ssh",".gnupg","Library/Keychains",".aws",".netrc",".config/gh",".docker",".kube"].map(p=>join(home,p));
-  return {home:resolve(home),roots:uniq([home,...temps]),denied:uniq([...secrets,...config])};
+  return {home:resolve(home),roots:uniq([home,...temps]),denied:uniq([...secrets,...config]),uploads:uniq(uploads)};
 }
 
 const inside=(p:string,dir:string)=>p===dir || p.startsWith(dir.endsWith("/")?dir:dir+"/");
 // .env files and private keys, wherever they are. Public keys (id_*.pub) are fine.
 export const secretName=(name:string)=>/^\.env/i.test(name) || /\.(pem|key)$/i.test(name) || (/^id_/.test(name) && !name.endsWith(".pub"));
-const refused=(p:string,rules:FileRules)=>rules.denied.some(d=>inside(p,d)) || p.split("/").some(secretName);
+const refused=(p:string,rules:FileRules)=>(rules.denied.some(d=>inside(p,d)) && !rules.uploads?.some(u=>inside(p,u) && p!==u)) || p.split("/").some(secretName);
 
 // What the phone typed, as an absolute path: ~ is the home folder, relative paths
 // start in the session's folder. Null when it can't be placed.
