@@ -27,6 +27,13 @@ const tabs:FakeTab[]=[
     {id:"1",role:"user",text:"Build an archive page for old posts. Ask me anything you need to know first."},
     {id:"2",role:"assistant",text:"A few choices before I start."},
   ]},
+  {session:session("agy-search",{tabName:"Search ranking report",claude:true,agent:"antigravity",group:shop,tabIndex:5,cwd:`${HOME}/code/storefront`,processing:true,atPrompt:false}),
+    screen:"? Which products should the report cover?\n\nQuestion\n────────────────────────────────────────\n\nQuestion 1/1: Which products should the report cover?\n\n> 1. (Recommended) The 20 best sellers\n  2. Everything in the spring catalog\n  3. Write-in...\n\n  ↑/↓ Navigate · enter Select · esc Skip\nesc to cancel                    accept-edits · Gemini",
+    chat:[
+      {id:"1",role:"user",text:"Make a weekly report of where our products rank in search."},
+      {id:"t1",role:"tool",name:"Bash",text:JSON.stringify({command:"bin/rails runner 'puts Product.count'",description:"Count products"},null,2),status:"completed",result:"Command exited with code 0.\n\n412"},
+      {id:"2",role:"assistant",text:"There are **412 products**, so I'd rather not check all of them every week. One question first."},
+    ]},
   {session:session("shell",{tabName:"~/code/storefront",group:shop,tabIndex:3,cwd:`${HOME}/code/storefront`}),screen:"➜  storefront git:(main) git status\nOn branch main\nYour branch is up to date with 'origin/main'.\n\nnothing to commit, working tree clean\n➜  storefront git:(main) "},
   {session:session("server",{tabName:"rails s",tabIndex:4,cwd:`${HOME}/code/storefront`,processing:true,atPrompt:false}),screen:"=> Booting Puma\n=> Rails 8.0.2 application starting in development\n* Listening on http://127.0.0.1:3000\nUse Ctrl-C to stop\nStarted GET \"/cart\" for 127.0.0.1\nCompleted 200 OK in 41ms"},
   {session:session("logs",{tabName:"rails s",tabIndex:4,paneIndex:2,name:"tail -f log/development.log",cwd:`${HOME}/code/storefront`}),screen:"tail: following log/development.log"},
@@ -59,7 +66,7 @@ export const fake={
   async preview(id:string):Promise<Preview> {
     const tab=find(id);const text=tab.ask?await tab.ask.read():screenFor(tab);
     if(!tab.chat)return {text,truncated:false,claude:null};
-    return {text,truncated:false,claude:{source:"transcript",identity:id,messages:tab.chat,...liveClaudeState(text)}};
+    return {text,truncated:false,claude:{agent:tab.session.agent ?? "claude",source:"transcript",identity:id,messages:tab.chat,...liveClaudeState(text)}};
   },
   async inputOptions():Promise<InputOptions> {
     return {truncated:false,skills:[

@@ -39,7 +39,7 @@ export function speakable(markdown:string):string {
     if(line)lines.push(line);
   }
   const text=lines.join(" ").replace(/(Followed by a (?:code block|table)\.)(\s+\1)+/g,"$1").replace(/\s+/g," ").trim();
-  return text===CODE || text===TABLE?`Claude replied with ${text==="Followed by a code block."?"a code block":"a table"}.`:text;
+  return text===CODE || text===TABLE?`The reply is ${text==="Followed by a code block."?"a code block":"a table"}.`:text;
 }
 
 export function speechSentences(markdown:string):string[] {

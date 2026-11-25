@@ -14,16 +14,17 @@ export function TerminalKeys({busy,send}:{busy:boolean;send:(k:Key)=>void}) {
 
 // Slim key bar for chatting with Claude: the mode switch and esc, plus arrows and
 // Enter only while a menu that couldn't become buttons is on screen. "More" reveals the rest.
-export function ChatKeys({mode,menu,busy,expanded,setExpanded,send}:{
-  mode?:string; menu:boolean; busy:boolean; expanded:boolean; setExpanded:(v:boolean)=>void; send:(k:Key)=>void;
+// `modes`: show Claude's permission mode as a chip that cycles it (other agents get a plain ⇧tab key).
+export function ChatKeys({modes=true,mode,menu,busy,expanded,setExpanded,send}:{
+  modes?:boolean; mode?:string; menu:boolean; busy:boolean; expanded:boolean; setExpanded:(v:boolean)=>void; send:(k:Key)=>void;
 }) {
   const shown:Key[]=["escape",...(menu?NAV:[])];
-  const rest=ALL.filter(([k])=>k!=="shift-tab" && !shown.includes(k));
+  const rest=ALL.filter(([k])=>(!modes || k!=="shift-tab") && !shown.includes(k));
   const label=!mode?"mode":mode==="default"?"default mode":mode;
   return <div className="keys chat-keys" aria-label="Keys">
-    <button type="button" className="key mode-chip" data-mode={mode?.replace(/\s+/g,"-") || "unknown"} disabled={busy} onMouseDown={e=>e.preventDefault()} onClick={()=>send("shift-tab")} aria-label={`Switch mode (now ${label})`}>
+    {modes && <button type="button" className="key mode-chip" data-mode={mode?.replace(/\s+/g,"-") || "unknown"} disabled={busy} onMouseDown={e=>e.preventDefault()} onClick={()=>send("shift-tab")} aria-label={`Switch mode (now ${label})`}>
       <span className="mode-dot" aria-hidden="true" />{label}<span className="mode-hint">⇧tab</span>
-    </button>
+    </button>}
     {ALL.filter(([k])=>shown.includes(k)).map(([k,label])=>keyButton(k,label,busy,send))}
     {expanded && rest.map(([k,label])=>keyButton(k,label,busy,send))}
     <button type="button" className="key key-more" aria-expanded={expanded} onMouseDown={e=>e.preventDefault()} onClick={()=>setExpanded(!expanded)}>{expanded?"less":"keys"}</button>

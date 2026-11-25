@@ -6,12 +6,13 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { claudeViewFor, liveClaudeState, processStarted } from "./claude-session";
 import { screenText } from "./claude-view";
+import { agentView } from "./agents";
 import { inputSkills } from "./input-skills";
 import { uploadPath } from "./uploads";
 import { answerQuestion } from "./question";
 import { Hc, HcError } from "./hc";
 import { envVar } from "./config";
-import { inputOptionsSchema, listSchema, previewSchema, type Action, type ClaudeSend, type Key, type Session, type SessionList } from "./contract";
+import { inputOptionsSchema, listSchema, previewSchema, type Action, type ClaudeSend, type Agent, type Key, type Session, type SessionList } from "./contract";
 
 // The same operations as ./iterm, against the Herdr desktop app. Terminals, screens
 // and typing go through herdr-core's socket; spaces, tabs and panes come from the
@@ -21,6 +22,7 @@ const hc=new Hc();
 // their own: otherwise they hold up a newly opened pane, the list and typing.
 const history=new Hc();
 const SCREEN_LINES=600;
+const PASTE_SETTLE=250;
 const SHELLS=new Set(["zsh","bash","fish","sh","tcsh","csh","ksh","nu","login","-zsh","-bash","-fish"]);
 // herdr-core's key names (see `hc schema`, terminal.keys).
 const KEYS:Record<Key,string>={"enter":"enter","tab":"tab","shift-tab":"shift+tab","escape":"esc","ctrl-c":"ctrl+c","ctrl-d":"ctrl+d","up":"up","down":"down","left":"left","right":"right","1":"1","2":"2","3":"3","4":"4","5":"5","6":"6","7":"7","8":"8","9":"9"};
@@ -54,7 +56,17 @@ const places=new Map<string,Place>();
 const transcripts=new Map<string,string>();
 const str=(v:unknown)=>typeof v==="string"?v:"";
 const isRemote=(address:string)=>address.includes("/");
-export const isClaude=(t:Pick<Terminal,"status"|"foreground">)=>t.status?.app==="claude-code" || /(?:^|\/)claude$/.test(t.foreground?.argv?.[0] ?? "");
+// The agent in a terminal, from what Herdr reports or the program's name.
+const APPS:Record<string,Agent>={"claude-code":"claude",claude:"claude",codex:"codex",antigravity:"antigravity"};
+const PROGRAMS:Record<string,Agent>={claude:"claude",codex:"codex",agy:"antigravity",antigravity:"antigravity"};
+export function agentOf(t:Pick<Terminal,"status"|"foreground">):Agent|null {
+  const app=t.status?.app && APPS[t.status.app];
+  if(app)return app;
+  const program=(t.foreground?.argv?.[0] ?? "").split("/").at(-1) ?? "";
+  return PROGRAMS[program] ?? null;
+}
+export const isClaude=(t:Pick<Terminal,"status"|"foreground">)=>agentOf(t)==="claude";
+const isAgent=(t:Pick<Terminal,"status"|"foreground">)=>agentOf(t)!==null;
 
 async function exists(path:string) {
   try {await access(path,constants.X_OK);return true;} catch {return false;}
@@ -96,7 +108,7 @@ async function appLayout(signal:AbortSignal):Promise<AppSpace[]|null> {
 export function tabLabel(tab:AppTab,byAddress:Map<string,Terminal>) {
   if(!/^\d+$/.test(tab.name))return tab.name;
   const terminals=tab.terminals.map(e=>byAddress.get(e.terminal)).filter((t):t is Terminal=>!!t);
-  const lead=terminals.find(isClaude) ?? terminals[0];
+  const lead=terminals.find(isAgent) ?? terminals[0];
   const title=(lead?.title || "").trim();
   const telling=title && title!==lead?.foreground?.name && !/^[~/]/.test(title) && !title.includes("@");
   return telling?title:tab.name;
@@ -109,8 +121,8 @@ export function sessionsFrom(terminals:Terminal[],spaces:AppSpace[]|null):Sessio
   const sessions:Session[]=[];
   const base=(t:Terminal)=>{
     const shell=!t.foreground || SHELLS.has(t.foreground.name);
-    const claude=isClaude(t);
-    return {
+    const agent=agentOf(t), claude=!!agent;
+    return {agent,
       id:t.address,name:t.title || t.name || "",tty:"",
       profile:t.status?.app || t.foreground?.name || "",cwd:t.foreground?.cwd || t.cwd || "",
       processing:t.status?.state==="working" || (!shell && !claude),atPrompt:shell && !claude,claude,
@@ -206,11 +218,16 @@ async function screen(terminal:string,lines=SCREEN_LINES) {
   return visible();
 }
 
-// Claude's chat view, from its saved transcript when it runs on this Mac.
+// The agent's chat view, from its saved conversation when it runs on this Mac.
 async function claudeView(t:Terminal,text:string,signal:AbortSignal) {
-  if(!isClaude(t)){transcripts.delete(t.address);return null;}
+  const agent=agentOf(t);
+  if(!agent){transcripts.delete(t.address);return null;}
   const pid=t.foreground?.pid;
   const started=pid && !isRemote(t.address)?await processStarted(pid,signal):null;
+  if(agent!=="claude"){
+    const process=pid && started?{pid,cwd:t.foreground?.cwd || t.cwd || "",started:Date.parse(`${started} GMT`) || 0}:null;
+    return agentView(agent,process,t.address,text,t.status?.state==="working",signal,path=>transcripts.set(t.address,path));
+  }
   if(!pid || !started)return {source:"screen" as const,identity:t.address,messages:[],...liveClaudeState(text)};
   return claudeViewFor({pid,tty:"",foreground:pid,group:pid,started,command:"claude"},text,signal,path=>transcripts.set(t.address,path));
 }
@@ -345,7 +362,8 @@ export async function action(input:Action,signal:AbortSignal):Promise<{sessionId
 // are saved on this Mac; a remote Claude gets its own copy through herdr-core.
 export async function sendClaude(sessionId:string,input:ClaudeSend,signal:AbortSignal) {
   const t=await facts(sessionId);
-  if(t.state!=="live" || !isClaude(t))throw Error("Claude is no longer running in this terminal. Your draft was kept.");
+  const agent=agentOf(t);
+  if(t.state!=="live" || !agent)throw Error("The agent is no longer running in this terminal. Your draft was kept.");
   const paths:string[]=[];
   for(const file of input.files){
     const local=uploadPath(sessionId,file);
@@ -356,7 +374,14 @@ export async function sendClaude(sessionId:string,input:ClaudeSend,signal:AbortS
   }
   const text=[input.text,...paths.map(path=>`Attached file: ${path}`)].filter(Boolean).join("\n");
   if(!text || text.length>16000)throw Error("Message must contain between 1 and 16,000 characters.");
-  await hc.type(sessionId,`\x1b[200~${text}\x1b[201~\r`);
+  if(agent==="claude")await hc.type(sessionId,`\x1b[200~${text}\x1b[201~\r`);
+  else {
+    // Codex and Antigravity can take an Enter that arrives with the paste as a new
+    // line, so give them a moment to finish the paste first.
+    await hc.type(sessionId,`\x1b[200~${text}\x1b[201~`);
+    await new Promise(r=>setTimeout(r,PASTE_SETTLE));
+    await hc.call("terminal.keys",{terminal:sessionId,keys:["enter"]});
+  }
   return {sessionId};
 }
 

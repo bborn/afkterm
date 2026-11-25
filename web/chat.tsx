@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { ChatMessage, ClaudeView, Prompt } from "./api";
+import { agentName, type ChatMessage, type ClaudeView, type Prompt } from "./api";
 import { Folded, FoldButton } from "./question";
 import { FileLinks, fileLinkComponents, rehypeFileLinks, useFileLinks } from "./file-viewer";
 import { pathsIn } from "./file-paths";
@@ -107,7 +107,7 @@ function ChatMessages({view,pending}:{view:ClaudeView;pending:string[]}) {
   }
   return <div className="chat">
     {view.notice && <p className="chat-notice">{view.notice}</p>}
-    {!view.messages.length && <p className="chat-notice">Waiting for Claude…</p>}
+    {!view.messages.length && <p className="chat-notice">Waiting for {agentName(view.agent)}…</p>}
     {blocks.map(b=>b.kind==="tools"
       ?<ToolRun key={b.tools[0].id} tools={b.tools} />
       :b.m.role==="user"
@@ -119,14 +119,14 @@ function ChatMessages({view,pending}:{view:ClaudeView;pending:string[]}) {
 
 // Claude's numbered menus (permissions, plan approval, questions) as big buttons.
 // Pressing the option's number in Claude selects it.
-export function PromptCard({prompt,disabled,choose}:{prompt:Prompt;disabled:boolean;choose:(key:string)=>void}) {
+export function PromptCard({prompt,name,disabled,choose}:{prompt:Prompt;name:string;disabled:boolean;choose:(key:string)=>void}) {
   const [details,setDetails]=useState(false);
   const [folded,setFolded]=useState(false);
-  if(folded)return <Folded text={prompt.question || "Claude is asking"} unfold={()=>setFolded(false)} />;
-  return <div className="prompt" role="group" aria-label="Claude is asking">
+  if(folded)return <Folded text={prompt.question || `${name} is asking`} unfold={()=>setFolded(false)} />;
+  return <div className="prompt" role="group" aria-label={`${name} is asking`}>
     <FoldButton fold={()=>setFolded(true)} />
     <div className="prompt-head">
-      <p className="prompt-question">{prompt.question || "Claude is asking"}</p>
+      <p className="prompt-question">{prompt.question || `${name} is asking`}</p>
       <button type="button" className="prompt-toggle" onClick={()=>setDetails(!details)}>{details?"Hide":"Details"}</button>
     </div>
     {details && <pre className="prompt-details">{prompt.text}</pre>}

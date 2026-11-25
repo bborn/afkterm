@@ -1,12 +1,17 @@
 import { z } from "zod";
 
 export const sessionId = z.string().min(1).max(128);
+// The coding agents afkterm can show as a chat.
+export const agents = ["claude", "codex", "antigravity"] as const;
+export type Agent = typeof agents[number];
 export const sessionSchema = z.object({
   id: sessionId, name: z.string(), tabName: z.string().default(""), windowId: z.number(), windowName: z.string(),
   group: z.object({id:z.string(),name:z.string(),color:z.string().regex(/^(?:#[0-9a-f]{6}|color\(display-p3 [01]\.\d{5} [01]\.\d{5} [01]\.\d{5}\))$/i),collapsed:z.boolean()}).nullable().default(null),
   tabIndex: z.number(), paneIndex: z.number(), tty: z.string(), profile: z.string(),
   cwd: z.string(), processing: z.boolean(), atPrompt: z.boolean(), selected: z.boolean(),
+  // An agent afkterm can chat with is running here (see `agent` for which).
   claude: z.boolean().default(false),
+  agent: z.enum(agents).nullable().default(null),
   // An agent that needs you (a question or a permission prompt), or that finished
   // since anyone last looked at it, on any Herdr client. Null when neither, or unknown.
   attention: z.enum(["blocked","done"]).nullable().default(null),
@@ -77,6 +82,7 @@ export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export const promptSchema = z.object({ question:z.string(), options:z.array(z.object({ key:z.string(), label:z.string(), detail:z.string().optional(), selected:z.boolean() })), text:z.string() });
 export type Prompt = z.infer<typeof promptSchema>;
 export const claudeViewSchema = z.object({
+  agent:z.enum(agents).default("claude"),
   source:z.enum(["transcript","screen"]), identity:z.string(), messages:z.array(chatMessageSchema), notice:z.string().optional(),
   prompt:promptSchema.optional(), question:questionSchema.optional(), working:z.boolean().default(false),
   // Claude's permission mode from its status line ("plan mode", "accept edits"…); "default" when none is shown.

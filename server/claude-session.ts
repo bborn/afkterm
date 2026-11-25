@@ -74,7 +74,7 @@ export async function readClaudeTranscript(process:Process,root:string,signal:Ab
     if(parsed.size>32)parsed.delete(parsed.keys().next().value!);
   }
   if(!messages.length)return null;
-  return {source:"transcript",identity:metadata.sessionId,messages,working:false,menu:false,notice:data.partial || messages.length>=120?"Showing recent conversation history.":undefined};
+  return {agent:"claude",source:"transcript",identity:metadata.sessionId,messages,working:false,menu:false,notice:data.partial || messages.length>=120?"Showing recent conversation history.":undefined};
 }
 const psFields="pid=,ppid=,tty=,tpgid=,pgid=,lstart=,comm=";
 // Listing every process on macOS takes ~0.5s; restricting ps to the terminals we
@@ -104,7 +104,7 @@ export async function claudeSession(tty:string,text:string,signal:AbortSignal):P
 // The chat view for a known Claude process: its transcript if one can be found,
 // otherwise what the screen shows.
 export async function claudeViewFor(process:Process,text:string,signal:AbortSignal,found?:(path:string)=>void):Promise<ClaudeView> {
-  const fallback:ClaudeView={source:"screen",identity:`${process.pid}:${process.started}`,messages:[],notice:"Saved Claude history is unavailable for this session. Showing terminal output.",...liveClaudeState(text)};
+  const fallback:ClaudeView={agent:"claude",source:"screen",identity:`${process.pid}:${process.started}`,messages:[],notice:"Saved Claude history is unavailable for this session. Showing terminal output.",...liveClaudeState(text)};
   try {
     const root=await claudeConfigForProcess(process,signal);
     const view=await readClaudeTranscript(process,root,signal,found);

@@ -5,7 +5,7 @@ import { command, heardNothing, newSpeech, speakable, speechParts } from "../web
 test("reads the prose and says where code and tables were, without reading them",()=>{
   const said=speakable("Fixed the **login** redirect in `/Users/bruno/app/src/auth/session.ts`.\n\n```ts\nconst x=1;\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nWant me to push?");
   assert.equal(said,"Fixed the login redirect in session.ts. Followed by a code block. Followed by a table. Want me to push?");
-  assert.equal(speakable("```sh\nnpm test\n```"),"Claude replied with a code block.");
+  assert.equal(speakable("```sh\nnpm test\n```"),"The reply is a code block.");
 });
 
 test("lists, headings, links and long inline code read as sentences",()=>{

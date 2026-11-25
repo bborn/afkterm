@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { dropTarget, moved, shiftFor, type Block } from "./tab-order";
-import { api, errorMessage, useStoredState, type Session, type SessionList as List } from "./api";
+import { agentName, api, errorMessage, useStoredState, type Session, type SessionList as List } from "./api";
 import { Sheet } from "./sheet";
 import { BellIcon, PlusIcon } from "./icons";
 import { useNotifications } from "./notifications";
@@ -14,7 +14,7 @@ export function TabTitle({session:s}:{session:Session}) {
   const name=emoji && label.length>emoji[0].length?label.slice(emoji[0].length):label;
   return <>
     {emoji && name!==label?<span className="tab-emoji" aria-hidden="true">{emoji[1]}</span>
-      :s.claude && <span className="claude-mark" aria-label="Claude">✳</span>}
+      :s.claude && <span className="claude-mark" data-agent={s.agent ?? "claude"} aria-label={agentName(s.agent)}>{s.agent==="codex"?"◎":s.agent==="antigravity"?"▲":"✳"}</span>}
     <span className="truncate">{name}</span>
   </>;
 }

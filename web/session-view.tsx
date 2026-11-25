@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, errorMessage, useLiveSession, useStoredState, type Session, type Upload } from "./api";
+import { agentName, api, errorMessage, useLiveSession, useStoredState, type Prompt, type Session, type Upload } from "./api";
 import { Chat, PromptCard } from "./chat";
 import { Composer } from "./composer";
 import { QuestionCard } from "./question";
@@ -58,6 +58,7 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
   const drag=useRef<{x:number;y:number;t:number;base:number;decided:boolean;active:boolean;field:boolean}|null>(null);
 
   const claude=preview?.claude;
+  const name=agentName(claude?.agent ?? session?.agent);
   const chat=mode==="chat" && claude?.source==="transcript";
   const prompt=claude?.prompt && claude.prompt.text!==answered?claude.prompt:undefined;
   useEffect(()=>{
@@ -101,6 +102,15 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
     finally{setBusy(false);}
   }
   const key=(k:Key)=>void run({kind:"key",key:k});
+  // Claude picks an option by its number. Codex and Antigravity menus move with the
+  // arrows, so walk there from the highlighted option and press Enter.
+  async function choose(p:Prompt,k:string) {
+    if((claude?.agent ?? "claude")==="claude"){key(k as Key);return;}
+    const from=p.options.findIndex(o=>o.selected), to=p.options.findIndex(o=>o.key===k);
+    if(from<0 || to<0)return;
+    for(let i=0;i<Math.abs(to-from);i++)if(!await run({kind:"key",key:to>from?"down":"up"}))return;
+    await run({kind:"key",key:"enter"});
+  }
 
   const claudeKeysMenu=!!claude && mode==="chat";
   const menuActions:SheetAction[]=[
@@ -124,7 +134,7 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
   const status=gone?"This tab was closed"
     :!connected && !preview?"Connecting…"
     :prompt || question?"Waiting for you"
-    :working?"Claude is working…"
+    :working?`${name} is working…`
     :session?.cwd.replace(/^\/Users\/[^/]+/,"~") || "";
 
   const claudeKeys=!!claude && mode==="chat";
@@ -186,17 +196,17 @@ export function SessionView({sessionId,session,sessions,gone,back,open,refreshLi
     </div>
     {behind && <button type="button" className="jump" onClick={toBottom}>↓ New output</button>}
     <div className="dock">
-      {working && <div className="working"><span className="spinner" aria-hidden="true" />Claude is working<button type="button" className="stop" disabled={busy} onClick={()=>key("escape")}>Stop</button></div>}
+      {working && <div className="working"><span className="spinner" aria-hidden="true" />{name} is working<button type="button" className="stop" disabled={busy} onClick={()=>key("escape")}>Stop</button></div>}
       {question && <QuestionCard question={question} disabled={busy} answer={answer=>run({kind:"question",prompt:question.prompt,answer})} />}
-      {prompt && <PromptCard key={prompt.text} prompt={prompt} disabled={busy} choose={k=>{setAnswered(prompt.text);key(k as Key);}} />}
+      {prompt && <PromptCard key={prompt.text} prompt={prompt} name={name} disabled={busy} choose={k=>{setAnswered(prompt.text);void choose(prompt,k);}} />}
       {claudeKeys
-        ?<ChatKeys mode={claude?.mode} menu={!!claude?.menu && !prompt && !question} busy={busy} expanded={chatKeysExpanded} setExpanded={setChatKeysExpanded} send={key} />
+        ?<ChatKeys modes={(claude?.agent ?? "claude")==="claude"} mode={claude?.mode} menu={!!claude?.menu && !prompt && !question} busy={busy} expanded={chatKeysExpanded} setExpanded={setChatKeysExpanded} send={key} />
         :showKeys && <TerminalKeys busy={busy} send={key} />}
       {chat && replies && <div className="replies" role="group" aria-label="Quick replies">
         {replies.map(r=><button key={r} type="button" className="reply" disabled={busy || gone}
           onClick={()=>void sendClaude(r,[]).catch(e=>setActionError(errorMessage(e)))}>{r}</button>)}
       </div>}
-      <Composer sessionId={sessionId} mode={chat || (claude && mode==="chat")?"claude":"terminal"} disabled={gone}
+      <Composer sessionId={sessionId} agent={name} mode={chat || (claude && mode==="chat")?"claude":"terminal"} disabled={gone}
         sendClaude={sendClaude}
         sendText={async text=>{await api.action(sessionId,{kind:"send",text,enter:true});atBottom.current=true;}} />
     </div>

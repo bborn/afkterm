@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { Action, ClaudeSend, FileInfo, Folder, InputOptions, LiveMessage, Preview, SessionList, Upload } from "../server/contract";
+import type { Action, Agent, ClaudeSend, FileInfo, Folder, InputOptions, LiveMessage, Preview, SessionList, Upload } from "../server/contract";
 
-export type { Action, ChatMessage, FileInfo, FileType, Folder, ClaudeView, InputSkill, Preview, Prompt, Question, QuestionAnswer, Session, SessionList, Upload } from "../server/contract";
+export type { Action, Agent, ChatMessage, FileInfo, FileType, Folder, ClaudeView, InputSkill, Preview, Prompt, Question, QuestionAnswer, Session, SessionList, Upload } from "../server/contract";
+
+// What to call the agent in a tab.
+export const agentName=(agent?:Agent|null)=>agent==="codex"?"Codex":agent==="antigravity"?"Antigravity":"Claude";
 
 // The device secret this phone got by pairing (see `afkterm pair`).
 const KEY="afkterm-key", LEGACY_KEY="iterm-web-key";

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, errorMessage, useStoredState, type ClaudeView } from "./api";
+import { agentName, api, errorMessage, useStoredState, type ClaudeView } from "./api";
 import { command, groupParts, heardNothing, newSpeech, type Speech, type SpeechState } from "./speech-text";
 import { SpeechDetector } from "./speech-detector";
 
@@ -190,7 +190,7 @@ class Loop {
         if(this.view?.prompt || this.view?.question){
           this.hooks.show({phase:"waiting-on-you"});
           this.log("waiting-on-you");
-          await this.sayOnce("Claude is asking you something. Answer it on the screen.");
+          await this.sayOnce(`${agentName(this.view?.agent)} is asking you something. Answer it on the screen.`);
           if(this.view?.prompt || this.view?.question)await new Promise<void>(resolve=>{this.wake=resolve;});
           this.wake=undefined;continue;
         }
@@ -285,7 +285,7 @@ class Loop {
     this.log(`sent busy=${busy}`);
     sentSound();
     // Claude reads it once it's done with what it's on, so say why nothing comes back yet.
-    if(busy)this.hooks.show({note:"Sent. Claude will get to it when it finishes what it's doing."});
+    if(busy)this.hooks.show({note:`Sent. ${agentName(this.view?.agent)} will get to it when it finishes what it's doing.`});
   }
 
   // One utterance: the mic is on only while listening, so iOS plays Claude's
@@ -345,6 +345,7 @@ class Loop {
 }
 
 export function HandsFree({view,send,stop,exit}:{view:ClaudeView|undefined;send:(text:string)=>Promise<void>;stop:()=>void;exit:()=>void}) {
+  const name=agentName(view?.agent);
   const [d,setD]=useState<Display>({phase:"listening",level:0,heard:"",sentence:"",before:"",note:"",error:""});
   const loop=useRef<Loop|null>(null);
   // Off by default: with the mic on, an iPhone without headphones plays speech
@@ -364,11 +365,11 @@ export function HandsFree({view,send,stop,exit}:{view:ClaudeView|undefined;send:
   const working=!!view?.working;
   const listening=d.phase==="listening" || d.phase==="hearing";
   const label=d.phase==="error"?"Something went wrong"
-    :d.phase==="speaking"?"Claude"
+    :d.phase==="speaking"?name
     :d.phase==="transcribing"?"Got it"
-    :d.phase==="waiting-on-you"?"Claude needs you"
+    :d.phase==="waiting-on-you"?`${name} needs you`
     :d.phase==="hearing"?"Listening"
-    :working?"Claude is working":"Listening";
+    :working?`${name} is working`:"Listening";
   const hint=d.phase==="speaking"?(talkOver?"Talk to interrupt, or tap to skip":"Tap to skip")
     :d.phase==="waiting-on-you"?"Answer on screen, then hands-free carries on"
     :working?"Say “stop” to interrupt":"Pause when you're done";
@@ -387,7 +388,7 @@ export function HandsFree({view,send,stop,exit}:{view:ClaudeView|undefined;send:
     <div className="handsfree-words">
       {d.phase==="speaking" && d.before && <p className="handsfree-before">{d.before}</p>}
       {big && <p className="handsfree-big" data-who={d.phase==="speaking" || d.phase==="waiting-on-you"?"claude":d.note?"note":"you"}>{big}</p>}
-      {!big && listening && <p className="handsfree-big handsfree-quiet">Talk to Claude</p>}
+      {!big && listening && <p className="handsfree-big handsfree-quiet">Talk to {name}</p>}
     </div>
     <div className="handsfree-bottom">
       <div className="handsfree-meter"><span style={{transform:`scaleX(${listening?Math.max(.02,d.level):0})`}} /></div>

@@ -27,7 +27,7 @@ async function listViaApi(signal:AbortSignal):Promise<SessionList> {
   // from iTerm's saved layout instead.
   const apiHasGroups=windows.some(w=>w.tabs?.some(t=>t.tabGroupId));
   const savedGroups=apiHasGroups?null:layoutGroups().then(g=>({ok:true as const,g}),(error:unknown)=>({ok:false as const,error}));
-  const rows:{session:Omit<Session,"name"|"tty"|"cwd"|"profile"|"processing"|"atPrompt"|"claude"|"tabName">;tabId:string}[]=[];
+  const rows:{session:Omit<Session,"name"|"tty"|"cwd"|"profile"|"processing"|"atPrompt"|"claude"|"agent"|"tabName">;tabId:string}[]=[];
   windows.forEach((window,wi)=>(window.tabs || []).forEach((tab,ti)=>tabSessions(tab).forEach((s,si)=>{
     rows.push({tabId:tab.tabId || "",session:{
       id:s.uniqueIdentifier!,windowId:wi+1,windowName:`Window ${wi+1}`,tabIndex:ti+1,paneIndex:si+1,
@@ -48,11 +48,11 @@ async function listViaApi(signal:AbortSignal):Promise<SessionList> {
     const tty=str(v.tty);
     if(tty)ttys.set(r.session.id,tty);
     return {...r.session,name:str(v.name),tabName:titles.get(r.tabId) || "",tty,cwd:str(v.path),profile:str(v.profileName),
-      atPrompt:!job || SHELLS.has(job),processing:!!job && !SHELLS.has(job),claude:job==="claude"};
+      atPrompt:!job || SHELLS.has(job),processing:!!job && !SHELLS.has(job),claude:job==="claude",agent:job==="claude"?"claude" as const:null};
   });
   // jobName is enough for the badge in the usual case; ps catches other launchers.
   const [claude,grouped]=await Promise.all([claudeTtys(sessions.filter(s=>!s.claude && !s.atPrompt).map(s=>s.tty),signal).catch(()=>new Set<string>()),savedGroups]);
-  const result:SessionList={running:true,truncated:rows.length>capped.length,sessions:sessions.map(s=>({...s,claude:s.claude || claude.has(s.tty),group:grouped?.ok?grouped.g.get(s.id) || null:s.group}))};
+  const result:SessionList={running:true,truncated:rows.length>capped.length,sessions:sessions.map(s=>({...s,claude:s.claude || claude.has(s.tty),agent:s.claude || claude.has(s.tty)?"claude" as const:null,group:grouped?.ok?grouped.g.get(s.id) || null:s.group}))};
   if(grouped && !grouped.ok)result.metadataError=grouped.error instanceof Error ? grouped.error.message : String(grouped.error);
   return result;
 }
@@ -74,7 +74,7 @@ async function listViaAppleScript(signal:AbortSignal) {
   let result=listSchema.parse(await runAutomation({method:"list"},signal));
   if(!result.running)return result;
   const [claude,grouped]=await Promise.all([claudeTtys(result.sessions.map(s=>s.tty),signal).catch(()=>null),groups]);
-  if(claude)result={...result,sessions:result.sessions.map(s=>({...s,claude:claude.has(s.tty)}))};
+  if(claude)result={...result,sessions:result.sessions.map(s=>({...s,claude:claude.has(s.tty),agent:claude.has(s.tty)?"claude" as const:null}))};
   if(!grouped.ok)return {...result,metadataError:grouped.error instanceof Error ? grouped.error.message : String(grouped.error)};
   return {...result,sessions:result.sessions.map(session=>({...session,group:grouped.g.get(session.id) || null}))};
 }

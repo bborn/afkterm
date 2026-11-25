@@ -11,7 +11,8 @@ const finePointer=()=>window.matchMedia("(pointer: fine)").matches;
 
 // The message box. In Claude mode it sends one bracketed paste plus Enter, with
 // attachment paths; in terminal mode it types the text and presses Enter.
-export function Composer({sessionId,mode,disabled,sendClaude,sendText}:{
+export function Composer({sessionId,mode,agent="Claude",disabled,sendClaude,sendText}:{
+  agent?:string;
   sessionId:string; mode:"claude"|"terminal"; disabled:boolean;
   sendClaude:(text:string,files:Upload[])=>Promise<void>;
   sendText:(text:string)=>Promise<void>;
@@ -155,7 +156,7 @@ export function Composer({sessionId,mode,disabled,sendClaude,sendText}:{
         </>}
         <div className="field" data-clear={multiline || cleared!==null || undefined}>
         <textarea ref={input} rows={1} value={text} maxLength={16000} enterKeyHint={mode==="terminal"?"send":"enter"}
-          placeholder={mode==="claude"?"Message Claude":"Type a command"}
+          placeholder={mode==="claude"?`Message ${agent}`:"Type a command"}
           autoCapitalize={mode==="terminal"?"off":"sentences"} autoCorrect={mode==="terminal"?"off":"on"} spellCheck={mode==="claude"}
           onChange={e=>setText(e.target.value)}
           onKeyDown={e=>{
