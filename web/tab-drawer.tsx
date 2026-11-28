@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useKeptScroll } from "./kept-scroll";
 import type { Session } from "./api";
 import { Attention, GroupHeader, ListFilter, TabTitle, isFolded, useListView, visibleSections } from "./session-list";
 
@@ -10,6 +11,8 @@ export function TabDrawer({sessions,currentId,open,offset,width,select,close}:{
   select:(id:string)=>void; close:()=>void;
 }) {
   const [query,setQuery]=useState("");
+  const scroller=useRef<HTMLDivElement>(null);
+  useKeptScroll("drawer",scroller);
   const q=query.trim().toLowerCase();
   const view=useListView(sessions);
   const sections=visibleSections(sessions,q,view.inbox);
@@ -24,7 +27,7 @@ export function TabDrawer({sessions,currentId,open,offset,width,select,close}:{
         <input type="search" placeholder="Search" value={query} onChange={e=>setQuery(e.target.value)} autoCapitalize="off" autoCorrect="off" />
         <ListFilter view={view} />
       </div>
-      <div className="drawer-list">
+      <div className="drawer-list" ref={scroller}>
         {sections.map((section,i)=>{
           const folded=isFolded(view,section,q);
           return <section key={`${section.key}:${i}`}>

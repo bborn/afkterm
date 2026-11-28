@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useKeptScroll } from "./kept-scroll";
 import { dropTarget, moved, shiftFor, type Block } from "./tab-order";
 import { agentName, api, errorMessage, useStoredState, type Session, type SessionList as List } from "./api";
 import { Sheet } from "./sheet";
@@ -127,6 +128,7 @@ export function SessionList({host,app="iTerm2",moveTabs=false,data,error,refresh
     if(ids.join()===pending.ids.join() || Date.now()-pending.at>6000)setPending(null);
   },[data,pending]);
   const list=useRef<HTMLElement>(null);
+  useKeptScroll("list",list);
 
   const q=query.trim().toLowerCase();
   const view=useListView(data?.sessions || []);
