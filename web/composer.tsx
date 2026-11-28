@@ -3,7 +3,7 @@ import { api, errorMessage, type InputSkill, type Upload } from "./api";
 import { CloseIcon, EditIcon, MicIcon, PlusIcon, SendIcon } from "./icons";
 import { useVoice, useVoiceAvailable } from "./voice";
 import { pressEnd, slideCancels, type Press } from "./push-to-talk";
-import { AttachmentTile, kindOf } from "./attachments";
+import { AttachmentTile, draggingFiles, kindOf, namedFile } from "./attachments";
 
 // `preview` is a local copy of an image, shown until it's sent.
 type Attachment = { id:string; name:string; upload?:Upload; error?:string; preview?:string };
@@ -54,8 +54,33 @@ export function Composer({sessionId,mode,agent="Claude",disabled,sendClaude,send
     .sort((a,b)=>Number(!a.command.toLowerCase().startsWith(slash))-Number(!b.command.toLowerCase().startsWith(slash)))
     .slice(0,8);
 
-  async function attach(list:FileList|null) {
-    for(const file of Array.from(list || []).slice(0,10-files.length)){
+  // Files dragged in from another app (on an iPhone, the screenshot that floats in
+  // the corner) can land anywhere on the page.
+  const [dropping,setDropping]=useState(false);
+  const attachRef=useRef<(list:File[])=>void>(()=>{});
+  useEffect(()=>{
+    let depth=0;
+    const enter=(e:DragEvent)=>{if(!draggingFiles(e))return;e.preventDefault();depth++;setDropping(true);};
+    const over=(e:DragEvent)=>{if(!draggingFiles(e))return;e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect=mode==="claude"?"copy":"none";};
+    const leave=(e:DragEvent)=>{if(!draggingFiles(e))return;depth=Math.max(0,depth-1);if(!depth)setDropping(false);};
+    const drop=(e:DragEvent)=>{
+      if(!draggingFiles(e))return;
+      e.preventDefault();depth=0;setDropping(false);
+      if(mode!=="claude"){setError("Switch to chat to attach files.");return;}
+      attachRef.current(Array.from(e.dataTransfer?.files || []));
+    };
+    window.addEventListener("dragenter",enter);window.addEventListener("dragover",over);
+    window.addEventListener("dragleave",leave);window.addEventListener("drop",drop);
+    return ()=>{
+      window.removeEventListener("dragenter",enter);window.removeEventListener("dragover",over);
+      window.removeEventListener("dragleave",leave);window.removeEventListener("drop",drop);
+    };
+  },[mode]);
+
+  async function attach(list:FileList|File[]|null) {
+    if(disabled)return;
+    setError("");
+    for(const file of Array.from(list || []).slice(0,10-files.length).map(f=>namedFile(f))){
       const id=crypto.randomUUID();
       const preview=kindOf(file.name)==="image" || file.type.startsWith("image/")?URL.createObjectURL(file):undefined;
       setFiles(f=>[...f,{id,name:file.name,preview}]);
@@ -63,6 +88,8 @@ export function Composer({sessionId,mode,agent="Claude",disabled,sendClaude,send
       catch(e){setFiles(f=>f.map(a=>a.id===id?{...a,error:errorMessage(e)}:a));}
     }
   }
+
+  attachRef.current=list=>void attach(list);
 
   const uploading=files.some(f=>!f.upload && !f.error);
   const ready=files.filter(f=>f.upload).map(f=>f.upload!);
@@ -128,6 +155,7 @@ export function Composer({sessionId,mode,agent="Claude",disabled,sendClaude,send
   const seconds=`${Math.floor(voice.seconds/60)}:${String(voice.seconds%60).padStart(2,"0")}`;
 
   return <div className="composer">
+    {dropping && <div className="drop-overlay" aria-hidden="true"><span>{mode==="claude"?`Drop to attach for ${agent}`:"Switch to chat to attach files"}</span></div>}
     {!voiceOn && suggestions.length>0 && <div className="suggestions" role="listbox">
       {suggestions.map(s=><button key={s.command} type="button" role="option" className="suggestion" onMouseDown={e=>e.preventDefault()} onClick={()=>{setText(`/${s.command} `);input.current?.focus();}}>
         <span className="suggestion-command">/{s.command}{s.hint && <span className="suggestion-hint"> {s.hint}</span>}</span>
@@ -159,6 +187,12 @@ export function Composer({sessionId,mode,agent="Claude",disabled,sendClaude,send
           placeholder={mode==="claude"?`Message ${agent}`:"Type a command"}
           autoCapitalize={mode==="terminal"?"off":"sentences"} autoCorrect={mode==="terminal"?"off":"on"} spellCheck={mode==="claude"}
           onChange={e=>setText(e.target.value)}
+          // A copied screenshot pastes in as a file.
+          onPaste={e=>{
+            const pasted=Array.from(e.clipboardData.files);
+            if(!pasted.length || mode!=="claude")return;
+            e.preventDefault();void attach(pasted);
+          }}
           onKeyDown={e=>{
             if(e.key!=="Enter" || e.nativeEvent.isComposing)return;
             if(e.metaKey || e.ctrlKey || ((finePointer() || mode==="terminal") && !e.shiftKey)){e.preventDefault();void send();}

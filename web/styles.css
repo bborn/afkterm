@@ -372,3 +372,7 @@ button.tool-summary.file-link { text-align: left; min-height: 20px; color: var(-
 .file-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .file-card-button { flex: 1; min-width: 100px; min-height: 44px; display: grid; place-items: center; border-radius: 10px; background: var(--surface-2); color: var(--text); text-decoration: none; font-size: 15px; font-weight: 600; }
 .file-card-button.primary { background: var(--accent); color: var(--accent-ink); }
+
+/* Files dragged onto the page, such as a screenshot from the corner of an iPhone. */
+.drop-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(10,10,12,.72); pointer-events: none; }
+.drop-overlay span { border: 2px dashed #6b6b75; border-radius: 18px; padding: 28px 24px; color: #e8e8ec; font-size: 17px; text-align: center; max-width: 320px; }

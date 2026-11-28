@@ -58,3 +58,18 @@ export function splitAttachments(text:string):{text:string;files:{path?:string;n
   });
   return {text:rest.join("\n").trim(),files};
 }
+
+// Pasted and dragged images often come as "image.png" or with no name at all.
+// Give them a name you can tell apart in the chat and on the Mac.
+const EXT:Record<string,string>={"image/png":"png","image/jpeg":"jpg","image/heic":"heic","image/gif":"gif","image/webp":"webp","application/pdf":"pdf","video/quicktime":"mov","video/mp4":"mp4"};
+export function namedFile(file:File,now=new Date()):File {
+  if(file.name && !/^image\.\w+$/i.test(file.name))return file;
+  const ext=/\.(\w+)$/.exec(file.name)?.[1] ?? EXT[file.type] ?? file.type.split("/")[1]?.replace(/\W/g,"") ?? "bin";
+  const p=(n:number)=>String(n).padStart(2,"0");
+  const stamp=`${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())} at ${p(now.getHours())}.${p(now.getMinutes())}.${p(now.getSeconds())}`;
+  const kind=file.type.startsWith("image/")?"Screenshot":"File";
+  return new File([file],`${kind} ${stamp}.${ext}`,{type:file.type,lastModified:file.lastModified});
+}
+
+// What a drag carries, so the page knows whether to offer a drop.
+export const draggingFiles=(e:DragEvent)=>!!e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files");
